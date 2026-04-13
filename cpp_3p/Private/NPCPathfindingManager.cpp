@@ -130,7 +130,7 @@ void ANPCPathfindingManager::RegisterOrUpdateNPCPath(ANPC* NPC, const TArray<FNP
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager - 注册/更新NPC[%s] 路径 - 点数: %d, 当前索引: %d"), *NPC->GetName(), Path.Num(), CurrentIndex);
+	UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager - 注册/更新NPC[%s] 路径 - 点数: %d, 当前索引: %d"), *NPC->GetActorLabel(), Path.Num(), CurrentIndex);
 
 	// 获取写锁（独占访问）
 	FRWScopeLock WriteLock(PathDataLock, SLT_Write);
@@ -158,7 +158,7 @@ void ANPCPathfindingManager::RegisterOrUpdateNPCPath(ANPC* NPC, const TArray<FNP
 				// 从映射表中移除
 				NPCPathIndexMap.Remove(NPC);
 
-				PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RegisterOrUpdateNPCPath - 移除NPC: %s"), *NPC->GetName()));
+				PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RegisterOrUpdateNPCPath - 移除NPC: %s"), *NPC->GetActorLabel()));
 			}
 		}
 		return;
@@ -177,7 +177,7 @@ void ANPCPathfindingManager::RegisterOrUpdateNPCPath(ANPC* NPC, const TArray<FNP
 			PathData.CurrentPathIndex = FMath::Clamp(CurrentIndex, 0, Path.Num() - 1);
 
 			PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RegisterOrUpdateNPCPath - 更新NPC: %s, 路径点数: %d, 当前索引: %d"),
-				*NPC->GetName(), Path.Num(), PathData.CurrentPathIndex));
+				*NPC->GetActorLabel(), Path.Num(), PathData.CurrentPathIndex));
 		}
 		else
 		{
@@ -199,7 +199,7 @@ AddNewEntry:
 		NPCPathIndexMap.Add(NPC, NewIndex);
 
 		PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RegisterOrUpdateNPCPath - 注册新NPC: %s, 路径点数: %d, 当前索引: %d"),
-			*NPC->GetName(), Path.Num(), NewPathData.CurrentPathIndex));
+			*NPC->GetActorLabel(), Path.Num(), NewPathData.CurrentPathIndex));
 	}
 }
 
@@ -227,9 +227,9 @@ bool ANPCPathfindingManager::UpdateNPCPathProgress(ANPC* NPC, int32 NewIndex)
 			if (NewIndex >= PathData.Path.Num())
 			{
 				// NPC已完成路径，从跟踪中移除
-				UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager - NPC[%s] 完成路径，从跟踪中移除"), *NPC->GetName());
+				UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager - NPC[%s] 完成路径，从跟踪中移除"), *NPC->GetActorLabel());
 				PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::UpdateNPCPathProgress - NPC %s 已完成路径，正在移除"),
-					*NPC->GetName()));
+					*NPC->GetActorLabel()));
 
 				// 从数组中移除
 				RegisteredNPCPaths.RemoveAt(Index);
@@ -264,7 +264,7 @@ bool ANPCPathfindingManager::UpdateNPCPathProgress(ANPC* NPC, int32 NewIndex)
 		}
 	}
 
-	PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::UpdateNPCPathProgress - NPC未注册: %s"), *NPC->GetName()));
+	PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::UpdateNPCPathProgress - NPC未注册: %s"), *NPC->GetActorLabel()));
 	return false;
 }
 
@@ -278,7 +278,7 @@ bool ANPCPathfindingManager::RemoveNPCFromTracking(ANPC* NPC)
 		return false;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("NPCPathfindingManager - 移除NPC[%s] 从跟踪"), *NPC->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("NPCPathfindingManager - 移除NPC[%s] 从跟踪"), *NPC->GetActorLabel());
 
 	// 获取写锁（独占访问）
 	FRWScopeLock WriteLock(PathDataLock, SLT_Write);
@@ -304,7 +304,7 @@ bool ANPCPathfindingManager::RemoveNPCFromTracking(ANPC* NPC)
 			// 从映射表中移除
 			NPCPathIndexMap.Remove(NPC);
 
-			PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RemoveNPCFromTracking - 移除NPC: %s"), *NPC->GetName()));
+			PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RemoveNPCFromTracking - 移除NPC: %s"), *NPC->GetActorLabel()));
 			return true;
 		}
 		else
@@ -314,7 +314,7 @@ bool ANPCPathfindingManager::RemoveNPCFromTracking(ANPC* NPC)
 		}
 	}
 
-	PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RemoveNPCFromTracking - NPC未注册: %s"), *NPC->GetName()));
+	PrintDebugLog(FString::Printf(TEXT("NPCPathfindingManager::RemoveNPCFromTracking - NPC未注册: %s"), *NPC->GetActorLabel()));
 	return false;
 }
 
@@ -392,7 +392,7 @@ void ANPCPathfindingManager::PrintRegisteredNPCsInfo() const
 		{
 			FString NPCInfo = FString::Printf(TEXT("  [%d] NPC: %s, 路径点数: %d, 当前索引: %d, 未到达点: %d"),
 				i,
-				*PathData.NPC->GetName(),
+				*PathData.NPC->GetActorLabel(),
 				PathData.Path.Num(),
 				PathData.CurrentPathIndex,
 				PathData.GetUnreachedPointCount());
@@ -423,7 +423,7 @@ int32 ANPCPathfindingManager::RequestPathfinding(ANPC* NPC, const FVector& Start
 	PathfindingTaskQueue.Add(NewTask);
 
 	UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager::RequestPathfinding - NPC[%s] 任务已加入队列，任务ID: %d，队列长度: %d"),
-		*NPC->GetName(), NewTask.TaskId, PathfindingTaskQueue.Num());
+		*NPC->GetActorLabel(), NewTask.TaskId, PathfindingTaskQueue.Num());
 
 	return NewTask.TaskId;
 }
@@ -469,7 +469,7 @@ void ANPCPathfindingManager::ProcessPathfindingQueue()
 			if (Task.Status == EPathfindingTaskStatus::Completed && Task.FoundPath.Num() > 0)
 			{
 				UE_LOG(LogTemp, Log, TEXT("NPCPathfindingManager::ProcessPathfindingQueue - NPC[%s] 寻路成功，路径点: %d，耗时: %.2fms"),
-					*ValidNPC->GetName(), Task.FoundPath.Num(), Task.AccumulatedTime);
+					*ValidNPC->GetActorLabel(), Task.FoundPath.Num(), Task.AccumulatedTime);
 
 				// 更新NPC状态
 				ValidNPC->bIsPathfindingInProgress = false;
@@ -485,7 +485,7 @@ void ANPCPathfindingManager::ProcessPathfindingQueue()
 			else
 			{
 				UE_LOG(LogTemp, Error, TEXT("NPCPathfindingManager::ProcessPathfindingQueue - NPC[%s] 寻路失败，耗时: %.2fms"),
-					*ValidNPC->GetName(), Task.AccumulatedTime);
+					*ValidNPC->GetActorLabel(), Task.AccumulatedTime);
 
 				// 更新NPC状态
 				ValidNPC->bIsPathfindingInProgress = false;
@@ -1539,98 +1539,121 @@ bool ANPCPathfindingManager::GenerateBiasedDestination(ANPC* NPC, float Radius, 
 	}
 
 	// 获取NPC当前位置
-	FVector CenterPos = NPC->GetActorLocation();
+	const FVector CenterPos = NPC->GetActorLocation();
 
 	// 候选点结构
 	struct FCandidatePoint
 	{
 		FVector Position;
-		float Score;
+		float VisitedWeight = 0.0f;
+		float SampleWeight = 0.0f;
 	};
 
 	TArray<FCandidatePoint> Candidates;
+	float TotalSampleWeight = 0.0f;
 
 	// 获取中心点的网格坐标
-	int32 CenterGridX = FMath::RoundToInt(CenterPos.X / GridSize);
-	int32 CenterGridY = FMath::RoundToInt(CenterPos.Y / GridSize);
+	const int32 CenterGridX = FMath::RoundToInt(CenterPos.X / GridSize);
+	const int32 CenterGridY = FMath::RoundToInt(CenterPos.Y / GridSize);
 
 	// 遍历圆形区域内的网格点
-	int32 GridSteps = FMath::CeilToInt(Radius / GridSize);
+	const int32 GridSteps = FMath::CeilToInt(Radius / GridSize);
 	for (int32 X = -GridSteps; X <= GridSteps; X++)
 	{
 		for (int32 Y = -GridSteps; Y <= GridSteps; Y++)
 		{
 			// 计算网格点位置
-			FVector2D Offset2D = FVector2D(X, Y) * GridSize;
-			float DistanceFromCenter = Offset2D.Length();
+			const FVector2D Offset2D = FVector2D(X, Y) * GridSize;
+			const float DistanceFromCenter = Offset2D.Length();
 
 			// 跳过超出半径的点
 			if (DistanceFromCenter > Radius)
+			{
 				continue;
+			}
+
+			// 跳过离自己太近的点，减少原地踏步
+			if (DistanceFromCenter < GridSize * 0.5f)
+			{
+				continue;
+			}
 
 			// 计算网格坐标
-			int32 GridX = CenterGridX + X;
-			int32 GridY = CenterGridY + Y;
-			FString GridKey = FString::Printf(TEXT("%d_%d"), GridX, GridY);
+			const int32 GridX = CenterGridX + X;
+			const int32 GridY = CenterGridY + Y;
+			const FString GridKey = FString::Printf(TEXT("%d_%d"), GridX, GridY);
 
 			// 从缓存获取高度
 			float GridZ = 0.0f;
 			if (!GetGridHeight(GridKey, GridZ))
-				continue;  // 投影失败，跳过此点
+			{
+				continue;
+			}
 
 			// 构造位置
-			FVector Location(GridX * GridSize, GridY * GridSize, GridZ);
+			const FVector Location(GridX * GridSize, GridY * GridSize, GridZ);
 
 			// 使用IsPositionReachable进行可达性判断
 			if (!IsPositionReachable(Location, NPC))
 			{
-				continue; // 跳过不可达的点
+				continue;
 			}
 
-			// 计算访问权重
+			// 访问权重：越少访问，越容易被采样到
 			float VisitedWeight = 0.0f;
-			if (NPC->Visited.Contains(GridKey))
+			if (const float* FoundVisitedWeight = NPC->Visited.Find(GridKey))
 			{
-				VisitedWeight = NPC->Visited[GridKey];
+				VisitedWeight = *FoundVisitedWeight;
 			}
 
-			// 计算距离
-			float Distance = FVector::Dist2D(Location, CenterPos);
+			// 距离因子：轻微偏向近一点的目标，但不压过 visited 的影响
+			const float DistanceAlpha = FMath::Clamp(DistanceFromCenter / FMath::Max(Radius, 1.0f), 0.0f, 1.0f);
+			const float DistanceFactor = FMath::Lerp(1.0f, 0.6f, DistanceAlpha);
 
-			// 计算分数：score = -visited_weight - distance
-			// 访问权重越低、距离越近，分数越高
-			float Score = -VisitedWeight;
+			// 最终采样权重
+			const float InverseVisitedWeight = 1.0f / (1.0f + VisitedWeight);
+			const float SampleWeight = FMath::Max(0.001f, InverseVisitedWeight * DistanceFactor);
 
-			// 添加候选点
 			FCandidatePoint Candidate;
 			Candidate.Position = Location;
-			Candidate.Score = Score;
+			Candidate.VisitedWeight = VisitedWeight;
+			Candidate.SampleWeight = SampleWeight;
 			Candidates.Add(Candidate);
+			TotalSampleWeight += SampleWeight;
 		}
 	}
 
 	// 如果没有候选点，返回失败
-	if (Candidates.Num() == 0)
+	if (Candidates.Num() == 0 || TotalSampleWeight <= KINDA_SMALL_NUMBER)
 	{
 		PrintDebugLog(TEXT("GenerateBiasedDestination - 没有找到有效的候选点"));
 		return false;
 	}
 
-	// 按分数排序（降序）
-	Candidates.Sort([](const FCandidatePoint& A, const FCandidatePoint& B)
+	// 按权重随机采样
+	const float RandomValue = FMath::FRandRange(0.0f, TotalSampleWeight);
+	float AccumulatedWeight = 0.0f;
+	int32 SelectedIndex = Candidates.Num() - 1;
+
+	for (int32 Index = 0; Index < Candidates.Num(); ++Index)
 	{
-		return A.Score > B.Score;
-	});
+		AccumulatedWeight += Candidates[Index].SampleWeight;
+		if (RandomValue <= AccumulatedWeight)
+		{
+			SelectedIndex = Index;
+			break;
+		}
+	}
 
-	// 取前K个候选点
-	int32 TopK = FMath::Min(20, Candidates.Num());
+	OutLocation = Candidates[SelectedIndex].Position;
 
-	// 从前K个中随机选择一个
-	int32 RandomIndex = FMath::RandRange(0, TopK - 1);
-	OutLocation = Candidates[RandomIndex].Position;
-
-	PrintDebugLog(FString::Printf(TEXT("GenerateBiasedDestination - 找到终点: %s, 候选点数: %d, 选中索引: %d, 分数: %.2f"),
-		*OutLocation.ToString(), Candidates.Num(), RandomIndex, Candidates[RandomIndex].Score));
+	PrintDebugLog(FString::Printf(TEXT("GenerateBiasedDestination - 找到终点: %s, 候选点数: %d, 选中索引: %d, VisitedWeight: %.2f, SampleWeight: %.4f, TotalSampleWeight: %.4f"),
+		*OutLocation.ToString(),
+		Candidates.Num(),
+		SelectedIndex,
+		Candidates[SelectedIndex].VisitedWeight,
+		Candidates[SelectedIndex].SampleWeight,
+		TotalSampleWeight));
 
 	return true;
 }

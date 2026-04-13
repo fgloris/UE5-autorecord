@@ -90,8 +90,8 @@ FString UNPCMovementRecorder::GetDefaultSavePath(ANPC* NPC) const
 	FString SaveDir = FPaths::Combine(ProjectDir, TEXT("Saved"), TEXT("Recordings"));
 
 	FString TimeStamp = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
-	FString NPCName = NPC ? NPC->GetName() : TEXT("UnknownNPC");
-	FString FileName = FString::Printf(TEXT("Recording_of_NPC_%s_at_%s.json"), *NPCName, *TimeStamp);
+	FString NPCName = NPC ? NPC->GetActorLabel() : TEXT("UnknownNPC");
+	FString FileName = FString::Printf(TEXT("Recording_of_%s_at_%s.json"), *NPCName, *TimeStamp);
 
 	return FPaths::Combine(SaveDir, FileName);
 }

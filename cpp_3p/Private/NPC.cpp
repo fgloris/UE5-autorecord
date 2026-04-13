@@ -167,7 +167,7 @@ void ANPC::BeginPlay()
 	KernelInfluenceRadius = KernelSigma * FMath::Sqrt(-2.0f * FMath::Loge(0.1f));
 
 	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 核函数参数 - Sigma: %.2fcm, 影响半径: %.2fcm"),
-		*GetName(), KernelSigma, KernelInfluenceRadius);
+		*GetActorLabel(), KernelSigma, KernelInfluenceRadius);
 
 	// 强制禁用弹簧臂碰撞检测（确保不会因碰撞缩短）
 	if (CameraBoom)
@@ -204,7 +204,7 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 	// 如果没有路径或已到达终点，直接返回
 	if (CurrentPath.Num() == 0)
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 路径为空，无法执行"), *GetName());
+		UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 路径为空，无法执行"), *GetActorLabel());
 		return;
 	}
 
@@ -216,7 +216,7 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 		{
 			bHasBroadcastDestinationReached = true;
 
-			UE_LOG(LogTemp, Log, TEXT("NPC[%s] 到达终点!"), *GetName());
+			UE_LOG(LogTemp, Log, TEXT("NPC[%s] 到达终点!"), *GetActorLabel());
 
 			// 广播到达目标点事件，同时传递完成的路径
 			OnDestinationReached.Broadcast(this, CurrentPath);
@@ -224,9 +224,9 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 			// 可选：显示调试信息
 			if (GEngine)
 				GEngine->AddOnScreenDebugMessage(3, 3.0f, FColor::Green,
-					FString::Printf(TEXT("NPC %s 已到达目标点!"), *GetName()));
+					FString::Printf(TEXT("NPC %s 已到达目标点!"), *GetActorLabel()));
 		}
-		UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 已到达终点"), *GetName());
+		UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 已到达终点"), *GetActorLabel());
 		return;  // 已到达终点，不再处理
 	}
 
@@ -280,7 +280,7 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 			static int32 RotateLogCounter = 0;
 			if (++RotateLogCounter % 60 == 0)  // 每秒打印一次旋转日志
 			{
-				UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 摄像机旋转中 - 角度误差: %.2f°"), *GetName(), FinalAngleError);
+				UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 摄像机旋转中 - 角度误差: %.2f°"), *GetActorLabel(), FinalAngleError);
 			}
 
 			// 记录当前帧状态（只在原地旋转相机，不移动）
@@ -306,7 +306,7 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 		static int32 MoveLogCounter = 0;
 		if (++MoveLogCounter % 60 == 0)  // 每秒打印一次移动日志
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 移动中 - 路径点: %d/%d, 距离: %.2f"), *GetName(), CurrentPathIndex, CurrentPath.Num(), Distance);
+			UE_LOG(LogTemp, Verbose, TEXT("NPC[%s] 移动中 - 路径点: %d/%d, 距离: %.2f"), *GetActorLabel(), CurrentPathIndex, CurrentPath.Num(), Distance);
 		}
 
 		// 计算XY平面的移动方向（忽略Z轴差异）
@@ -323,7 +323,7 @@ void ANPC::ExecuteCurrentPath(float DeltaTime, ANPCPathfindingManager* Pathfindi
 		int32 OldIndex = CurrentPathIndex;
 		CurrentPathIndex++;
 
-		UE_LOG(LogTemp, Log, TEXT("NPC[%s] 到达路径点 %d/%d"), *GetName(), CurrentPathIndex, CurrentPath.Num());
+		UE_LOG(LogTemp, Log, TEXT("NPC[%s] 到达路径点 %d/%d"), *GetActorLabel(), CurrentPathIndex, CurrentPath.Num());
 
 		if (GEngine) GEngine->AddOnScreenDebugMessage(2, 2.0f, FColor::Yellow, FString::Printf(TEXT("Reached waypoint %d/%d"), CurrentPathIndex, CurrentPath.Num()));
 
@@ -406,7 +406,7 @@ void ANPC::StartPathFollowing(const TArray<FNPCNavigationState>& Path, ANPCPathf
 	CurrentPathIndex = 0;       // 从第一个路径点开始
 	bHasBroadcastDestinationReached = false;  // 重置到达标志，准备检测新的到达
 
-	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 开始路径跟随 - 路径点数: %d"), *GetName(), Path.Num());
+	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 开始路径跟随 - 路径点数: %d"), *GetActorLabel(), Path.Num());
 
 	// 在管理器中注册路径
 	if (PathfindingManager)
@@ -418,7 +418,7 @@ void ANPC::StartPathFollowing(const TArray<FNPCNavigationState>& Path, ANPCPathf
 // ==================== 停止路径跟随 ====================
 void ANPC::StopPathFollowing(ANPCPathfindingManager* PathfindingManager)
 {
-	UE_LOG(LogTemp, Warning, TEXT("NPC[%s] 停止路径跟随 - 当前索引: %d/%d"), *GetName(), CurrentPathIndex, CurrentPath.Num());
+	UE_LOG(LogTemp, Warning, TEXT("NPC[%s] 停止路径跟随 - 当前索引: %d/%d"), *GetActorLabel(), CurrentPathIndex, CurrentPath.Num());
 
 	CurrentPath.Empty();        // 清空路径
 	CurrentPathIndex = 0;       // 重置索引
@@ -478,7 +478,7 @@ void ANPC::FindPathAStarAsync(const FVector& StartPos, float StartAngle, const F
 	// 如果已经在寻路，拒绝新请求
 	if (bIsPathfindingInProgress)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("NPC[%s] 异步寻路正在进行中，忽略新请求"), *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("NPC[%s] 异步寻路正在进行中，忽略新请求"), *GetActorLabel());
 		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, TEXT("ANPC::FindPathAStarAsync - 寻路正在进行中，忽略新请求"));
 		return;
 	}
@@ -486,12 +486,12 @@ void ANPC::FindPathAStarAsync(const FVector& StartPos, float StartAngle, const F
 	// 检查Manager是否有效
 	if (!PathfindingManager)
 	{
-		UE_LOG(LogTemp, Error, TEXT("NPC[%s] 异步寻路失败 - PathfindingManager为NULL"), *GetName());
+		UE_LOG(LogTemp, Error, TEXT("NPC[%s] 异步寻路失败 - PathfindingManager为NULL"), *GetActorLabel());
 		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, TEXT("ANPC::FindPathAStarAsync - PathfindingManager为NULL!"));
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 开始异步A*寻路（委托给Manager） - 起点: %s, 终点: %s"), *GetName(), *StartPos.ToString(), *GoalPos.ToString());
+	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 开始异步A*寻路（委托给Manager） - 起点: %s, 终点: %s"), *GetActorLabel(), *StartPos.ToString(), *GoalPos.ToString());
 
 	// ==================== 主线程：准备数据 ====================
 	UWorld* World = GetWorld();
@@ -531,12 +531,12 @@ void ANPC::FindPathAStarAsync(const FVector& StartPos, float StartAngle, const F
 
 	if (TaskId == -1)
 	{
-		UE_LOG(LogTemp, Error, TEXT("NPC[%s] 异步寻路失败 - 无法提交任务到Manager"), *GetName());
+		UE_LOG(LogTemp, Error, TEXT("NPC[%s] 异步寻路失败 - 无法提交任务到Manager"), *GetActorLabel());
 		bIsPathfindingInProgress = false;
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 已将寻路任务提交给Manager，任务ID: %d"), *GetName(), TaskId);
+	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 已将寻路任务提交给Manager，任务ID: %d"), *GetActorLabel(), TaskId);
 }
 
 // ==================== NPC录制系统实现 ====================
@@ -599,7 +599,7 @@ void ANPC::UpdateVisitedStats(const TArray<FNPCNavigationState>& Path)
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 更新访问统计 - 路径点数: %d, 已访问网格数: %d"),
-		*GetName(), Path.Num(), Visited.Num());
+		*GetActorLabel(), Path.Num(), Visited.Num());
 }
 
 // ==================== 根据当前位置更新访问统计（简化版）====================
@@ -718,5 +718,5 @@ void ANPC::VisualizeVisitedInRadius(float Radius)
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("NPC[%s] 可视化访问状况 - 半径: %.2fcm, 网格数: %d, 已访问: %d"),
-		*GetName(), Radius, (GridRadius * 2 + 1) * (GridRadius * 2 + 1), Visited.Num());
+		*GetActorLabel(), Radius, (GridRadius * 2 + 1) * (GridRadius * 2 + 1), Visited.Num());
 }
