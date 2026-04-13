@@ -228,10 +228,10 @@ int32 UNPCMovementRecorder::CalculateCameraRotationDirection(float CurrentYaw, f
 	while (DeltaYaw < -180.0f) DeltaYaw += 360.0f;
 
 	// 根据角度差确定旋转方向
-	if (DeltaYaw > 1.0f)
-		return 1;  // 顺时针旋转
-	else if (DeltaYaw < -1.0f)
-		return 2;  // 逆时针旋转
+	if (DeltaYaw > 0.1f)
+		return 2;  // 顺时针旋转
+	else if (DeltaYaw < -0.1f)
+		return 1;  // 逆时针旋转
 	else
 		return 0;  // 无旋转
 }
