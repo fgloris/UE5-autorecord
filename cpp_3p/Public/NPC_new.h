@@ -94,7 +94,7 @@ private:
 	int32 SampleWeightedCandidateIndex(const TArray<FExploreMoveCandidate>& Candidates) const;
 
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
-	bool IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& DesiredCameraWorldRotation) const;
+	bool IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& InDesiredCameraWorldRotation) const;
 	bool ChooseRandomCameraAction(FRotator& OutDesiredRotation) const;
 
 	void TryStartNewExploreMove();

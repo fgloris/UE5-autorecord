@@ -397,7 +397,7 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
 	return true;
 }
 
-bool ANPC_new::IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& DesiredCameraWorldRotation) const
+bool ANPC_new::IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& InDesiredCameraWorldRotation) const
 {
 	const USpringArmComponent* CameraBoomComp = GetCameraBoom();
 	UWorld* World = GetWorld();
@@ -407,7 +407,7 @@ bool ANPC_new::IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRo
 	}
 
 	const FVector BoomOrigin = ActorLocation + CameraBoomComp->GetRelativeLocation();
-	const FVector CameraEnd = BoomOrigin - DesiredCameraWorldRotation.Vector() * CameraBoomComp->TargetArmLength;
+	const FVector CameraEnd = BoomOrigin - InDesiredCameraWorldRotation.Vector() * CameraBoomComp->TargetArmLength;
 	const FCollisionShape ProbeShape = FCollisionShape::MakeSphere(CameraCollisionProbeRadius);
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(NPCNewCameraSweep), false, this);
