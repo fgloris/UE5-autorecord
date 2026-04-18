@@ -1,4 +1,4 @@
-#include "NPC_new.hpp"
+#include "NPC_new.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
