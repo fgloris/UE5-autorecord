@@ -757,59 +757,90 @@ void ANPCPathfindingManager::GetNeighborStates(const FNPCNavigationState& Curren
 {
 	OutNeighbors.Empty();
 
-	// 8个移动方向（仅在XY平面）
-	FVector2D Directions2D[] = {
-		FVector2D(1, 0), FVector2D(-1, 0),
-		FVector2D(0, 1), FVector2D(0, -1),
-		FVector2D(1, 1), FVector2D(-1, -1),
-		FVector2D(1, -1), FVector2D(-1, 1)
+	// 当前版本只使用管理器内部已有缓存/检测逻辑；这里保留参数是为了兼容原接口。
+	(void)World;
+	(void)NavSys;
+
+	const int32 CurrentGridX = FMath::RoundToInt(CurrentState.Position.X / GridSize);
+	const int32 CurrentGridY = FMath::RoundToInt(CurrentState.Position.Y / GridSize);
+
+	// 以“相机局部坐标系”为动作空间：ForwardCoeff 表示沿相机前向，RightCoeff 表示沿相机右向。
+	const FVector2D LocalMoves[] = {
+		FVector2D( 1.0f,  0.0f), // 前
+		FVector2D(-1.0f,  0.0f), // 后
+		FVector2D( 0.0f, -1.0f), // 左
+		FVector2D( 0.0f,  1.0f), // 右
+		FVector2D( 1.0f, -1.0f), // 前左
+		FVector2D( 1.0f,  1.0f), // 前右
+		FVector2D(-1.0f, -1.0f), // 后左
+		FVector2D(-1.0f,  1.0f)  // 后右
 	};
 
-	// 生成移动邻居
-	for (const FVector2D& Dir2D : Directions2D)
+	const float Yaw = CurrentState.CameraYawAngle;
+	const FVector2D CamForward(FMath::Cos(Yaw), FMath::Sin(Yaw));
+	const FVector2D CamRight(-FMath::Sin(Yaw), FMath::Cos(Yaw));
+
+	// 由于局部动作投影到世界坐标后可能会吸附到同一个网格，因此做一次去重。
+	TSet<FString> AddedMoveKeys;
+
+	for (const FVector2D& LocalMove : LocalMoves)
 	{
-		FNPCNavigationState Neighbor;
-
-		// 获取当前状态的整数格子坐标
-		int32 CurrentGridX = FMath::RoundToInt(CurrentState.Position.X / GridSize);
-		int32 CurrentGridY = FMath::RoundToInt(CurrentState.Position.Y / GridSize);
-
-		// 计算邻居的整数格子坐标（与ReachabilityMap保持一致）
-		int32 NeighborGridX = CurrentGridX + FMath::RoundToInt(Dir2D.X);
-		int32 NeighborGridY = CurrentGridY + FMath::RoundToInt(Dir2D.Y);
-
-		// 将格子坐标转换为世界坐标（格子中心）
-		FVector2D NewPos2D = FVector2D(NeighborGridX * GridSize, NeighborGridY * GridSize);
-
-		// 检查XY距离是否超过最大搜索范围
-		if (FVector2D::Distance(NewPos2D, FVector2D(GoalState.Position.X, GoalState.Position.Y)) > MaxDistance)
+		FVector2D MoveDir2D = CamForward * LocalMove.X + CamRight * LocalMove.Y;
+		if (MoveDir2D.IsNearlyZero())
+		{
 			continue;
+		}
+		MoveDir2D.Normalize();
 
-		// 创建网格键并从缓存获取高度
-		FString NeighborGridKey = FString::Printf(TEXT("%d_%d"), NeighborGridX, NeighborGridY);
+		// 先生成连续候选点，再吸附回现有离散网格。
+		const FVector2D CandidatePos2D = FVector2D(CurrentState.Position.X, CurrentState.Position.Y) + MoveDir2D * GridSize;
+		const int32 NeighborGridX = FMath::RoundToInt(CandidatePos2D.X / GridSize);
+		const int32 NeighborGridY = FMath::RoundToInt(CandidatePos2D.Y / GridSize);
+
+		// 防止因为吸附导致停留在原地。
+		if (NeighborGridX == CurrentGridX && NeighborGridY == CurrentGridY)
+		{
+			continue;
+		}
+
+		const FString DedupKey = FString::Printf(TEXT("%d_%d"), NeighborGridX, NeighborGridY);
+		if (AddedMoveKeys.Contains(DedupKey))
+		{
+			continue;
+		}
+
+		const FVector2D NewPos2D(NeighborGridX * GridSize, NeighborGridY * GridSize);
+
+		// 保持与旧逻辑一致：这里只限制“候选邻居距目标的平面距离”。
+		if (FVector2D::Distance(NewPos2D, FVector2D(GoalState.Position.X, GoalState.Position.Y)) > MaxDistance)
+		{
+			continue;
+		}
+
+		const FString NeighborGridKey = FString::Printf(TEXT("%d_%d"), NeighborGridX, NeighborGridY);
 		float GridZ = 0.0f;
 		if (!GetGridHeight(NeighborGridKey, GridZ))
-			continue;  // 投影失败，跳过此邻居
+		{
+			continue;
+		}
 
-		// 使用整数格子坐标对应的XY位置，配合缓存中的Z高度
+		FNPCNavigationState Neighbor;
 		Neighbor.Position = FVector(NewPos2D.X, NewPos2D.Y, GridZ);
 		Neighbor.CameraYawAngle = CurrentState.CameraYawAngle;
 
-		// 检查高度差
-		float HeightDiff = FMath::Abs(Neighbor.Position.Z - CurrentState.Position.Z);
+		const float HeightDiff = FMath::Abs(Neighbor.Position.Z - CurrentState.Position.Z);
 		if (HeightDiff > MaxStepHeight)
 		{
 			continue;
 		}
 
-		// 检查是否在预设的不可达点半径内
 		if (InaccessiblePoints.Num() > 0)
 		{
 			bool bIsInInaccessibleRadius = false;
 			for (const FVector& InaccessiblePoint : InaccessiblePoints)
 			{
-				float Distance = FVector::Dist2D(Neighbor.Position, InaccessiblePoint);
-				if (Distance < GridSize * 2)
+				const float Distance = FVector::Dist2D(Neighbor.Position, InaccessiblePoint);
+				if (Distance < GridSize * 2.0f)
 				{
 					bIsInInaccessibleRadius = true;
 					break;
@@ -821,41 +852,41 @@ void ANPCPathfindingManager::GetNeighborStates(const FNPCNavigationState& Curren
 			}
 		}
 
-		// 如果有NPC引用，进行碰撞检测
 		if (NPC)
 		{
-			// 检查胶囊体碰撞
 			if (!IsPositionReachable(Neighbor.Position, NPC))
 			{
 				continue;
 			}
 
-			// 检查摄像机碰撞
 			if (CheckCameraCollision(NPC, Neighbor.Position, Neighbor.CameraYawAngle))
 			{
 				continue;
 			}
 		}
 
+		AddedMoveKeys.Add(DedupKey);
 		OutNeighbors.Add(Neighbor);
 	}
 
-	// 生成原地旋转邻居
+	// 生成原地旋转邻居（保留原逻辑）
 	for (int32 AngleStep = -1; AngleStep <= 1; AngleStep++)
 	{
 		if (AngleStep == 0)
+		{
 			continue;
+		}
 
 		FNPCNavigationState Neighbor;
 		Neighbor.Position = CurrentState.Position;
 		Neighbor.CameraYawAngle = CurrentState.CameraYawAngle + AngleStep * CameraAngleStep;
 
-		// 角度规范化到 [0, 2π) 范围
 		Neighbor.CameraYawAngle = FMath::Fmod(Neighbor.CameraYawAngle, 2.0f * PI);
-		if (Neighbor.CameraYawAngle < 0)
+		if (Neighbor.CameraYawAngle < 0.0f)
+		{
 			Neighbor.CameraYawAngle += 2.0f * PI;
+		}
 
-		// 如果有NPC引用，检查摄像机碰撞
 		if (NPC)
 		{
 			if (CheckCameraCollision(NPC, Neighbor.Position, Neighbor.CameraYawAngle))
