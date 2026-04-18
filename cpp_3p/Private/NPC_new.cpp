@@ -1,4 +1,4 @@
-#include "NPC_new_fixed.hpp"
+#include "NPC_new.h"
 
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
