@@ -19,10 +19,10 @@ ANPC_new::ANPC_new()
 	MoveInputScale = 1.0f;
 	ActorYawInterpSpeed = 10.0f;
 
-	CameraYawStepDegrees = 15.0f;
-	CameraPitchStepDegrees = 8.0f;
-	MinCameraPitchDegrees = -50.0f;
-	MaxCameraPitchDegrees = 10.0f;
+	CameraYawStepDegrees = 30.0f;
+	CameraPitchStepDegrees = 30.0f;
+	MinCameraPitchDegrees = -60.0f;
+	MaxCameraPitchDegrees = 60.0f;
 	CameraCollisionProbeRadius = 15.0f;
 	CameraRotationInterpSpeed = 6.0f;
 
