@@ -1,11 +1,11 @@
-#include "NPC_new.h"
+#include "NPC_new.hpp"
 
+#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
-#include "Engine/World.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "NavigationSystem.h"
+#include "Engine/World.h"
 #include "NPCMovementRecorder.h"
 
 ANPC_new::ANPC_new()
@@ -15,20 +15,13 @@ ANPC_new::ANPC_new()
 
 	ProbeStepDistance = 100.0f;
 	ExplorationBias = 1.0f;
-	MoveAcceptanceRadius = 20.0f;
-	MoveInputScale = 1.0f;
-	ActorYawInterpSpeed = 10.0f;
-
-	CameraYawStepDegrees = 30.0f;
-	CameraPitchStepDegrees = 30.0f;
-	MinCameraPitchDegrees = -60.0f;
-	MaxCameraPitchDegrees = 60.0f;
+	CameraYawStepDegrees = 15.0f;
+	CameraPitchStepDegrees = 8.0f;
+	MinCameraPitchDegrees = -50.0f;
+	MaxCameraPitchDegrees = 10.0f;
 	CameraCollisionProbeRadius = 15.0f;
-	CameraRotationInterpSpeed = 6.0f;
-
 	bUpdateVisitedBeforeSampling = true;
 	bDebugDrawExploreCandidates = false;
-	bRequireCameraCollisionFreeForMoveCandidate = false;
 }
 
 void ANPC_new::BeginPlay()
@@ -48,29 +41,6 @@ void ANPC_new::ExecuteNextStep(float DeltaTime)
 		return;
 	}
 
-	if (!bHasActiveExploreMoveTarget)
-	{
-		TryStartNewExploreMove();
-	}
-
-	UpdateMoveFollowing(DeltaTime);
-	UpdateCameraSmoothing(DeltaTime);
-
-	if (MovementRecorder && MovementRecorder->bIsRecording)
-	{
-		MovementRecorder->RecordFrameFromNPC(this, CurrentPath, CurrentPathIndex, DeltaTime, bHasActiveExploreMoveTarget);
-	}
-}
-
-void ANPC_new::ClearExploreMoveTarget()
-{
-	bHasActiveExploreMoveTarget = false;
-	CurrentExploreMoveTarget = FVector::ZeroVector;
-	CurrentExploreMoveNavFootLocation = FVector::ZeroVector;
-}
-
-void ANPC_new::TryStartNewExploreMove()
-{
 	if (bUpdateVisitedBeforeSampling)
 	{
 		UpdateVisitedStatsAtCurrentPosition();
@@ -80,102 +50,31 @@ void ANPC_new::TryStartNewExploreMove()
 	BuildReachableMoveCandidates(Candidates);
 
 	const int32 PickedIndex = SampleWeightedCandidateIndex(Candidates);
-	if (!Candidates.IsValidIndex(PickedIndex))
+	if (Candidates.IsValidIndex(PickedIndex))
 	{
+		const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
+		AddMovementInput(Picked.WorldDirection, 1.0f);
+
 		if (bDebugDrawExploreCandidates)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("NPC_new[%s] no valid move candidate this tick"), *GetActorLabel());
+			DrawDebugDirectionalArrow(
+				GetWorld(),
+				GetActorLocation(),
+				GetActorLocation() + Picked.WorldDirection * 120.0f,
+				30.0f,
+				FColor::Cyan,
+				false,
+				0.15f,
+				0,
+				2.5f);
 		}
-		return;
 	}
 
-	const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
-	bHasActiveExploreMoveTarget = true;
-	CurrentExploreMoveTarget = Picked.ActorTargetLocation;
-	CurrentExploreMoveNavFootLocation = Picked.NavFootLocation;
+	TryApplyRandomCameraAction();
 
-	FRotator ChosenCameraRot;
-	if (ChooseRandomCameraAction(ChosenCameraRot))
+	if (MovementRecorder && MovementRecorder->bIsRecording)
 	{
-		bHasDesiredCameraWorldRotation = true;
-		DesiredCameraWorldRotation = ChosenCameraRot;
-	}
-
-	if (bDebugDrawExploreCandidates)
-	{
-		DrawDebugSphere(GetWorld(), CurrentExploreMoveTarget, 18.0f, 12, FColor::Cyan, false, 0.5f);
-		DrawDebugDirectionalArrow(
-			GetWorld(),
-			GetActorLocation(),
-			CurrentExploreMoveTarget,
-			35.0f,
-			FColor::Cyan,
-			false,
-			0.5f,
-			0,
-			2.5f);
-	}
-}
-
-void ANPC_new::UpdateMoveFollowing(float DeltaTime)
-{
-	if (!bHasActiveExploreMoveTarget)
-	{
-		return;
-	}
-
-	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
-	if (!MoveComp)
-	{
-		ClearExploreMoveTarget();
-		return;
-	}
-
-	FVector ToTarget = CurrentExploreMoveTarget - GetActorLocation();
-	ToTarget.Z = 0.0f;
-	const float Dist2D = ToTarget.Size();
-	if (Dist2D <= MoveAcceptanceRadius)
-	{
-		const FVector ReachedLocation = CurrentExploreMoveTarget;
-		ClearExploreMoveTarget();
-		UpdateVisitedStatsAtCurrentPosition();
-		OnExploreMoveTargetReached(ReachedLocation);
-		return;
-	}
-
-	const FVector MoveDir = ToTarget.GetSafeNormal();
-	if (MoveDir.IsNearlyZero())
-	{
-		return;
-	}
-
-	MoveComp->SetMovementMode(MOVE_Walking);
-	MoveComp->AddInputVector(MoveDir * MoveInputScale, true);
-
-	const FRotator CurrentRot = GetActorRotation();
-	FRotator DesiredActorRot = MoveDir.Rotation();
-	DesiredActorRot.Pitch = 0.0f;
-	DesiredActorRot.Roll = 0.0f;
-	const FRotator SmoothedActorRot = FMath::RInterpTo(CurrentRot, DesiredActorRot, DeltaTime, ActorYawInterpSpeed);
-	SetActorRotation(SmoothedActorRot);
-}
-
-void ANPC_new::UpdateCameraSmoothing(float DeltaTime)
-{
-	USpringArmComponent* CameraBoomComp = GetCameraBoom();
-	if (!CameraBoomComp || !bHasDesiredCameraWorldRotation)
-	{
-		return;
-	}
-
-	const FRotator CurrentRot = CameraBoomComp->GetComponentRotation();
-	const FRotator NewRot = FMath::RInterpTo(CurrentRot, DesiredCameraWorldRotation, DeltaTime, CameraRotationInterpSpeed);
-	CameraBoomComp->SetWorldRotation(NewRot);
-
-	if (NewRot.Equals(DesiredCameraWorldRotation, 0.75f))
-	{
-		CameraBoomComp->SetWorldRotation(DesiredCameraWorldRotation);
-		bHasDesiredCameraWorldRotation = false;
+		MovementRecorder->RecordFrameFromNPC(this, CurrentPath, CurrentPathIndex, DeltaTime, Candidates.IsValidIndex(PickedIndex));
 	}
 }
 
@@ -235,8 +134,7 @@ bool ANPC_new::TryBuildMoveCandidate(const FVector& DesiredWorldDirection, FExpl
 	}
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
-	const UCapsuleComponent* Capsule = GetCapsuleComponent();
-	if (!NavSys || !Capsule)
+	if (!NavSys)
 	{
 		return false;
 	}
@@ -249,60 +147,53 @@ bool ANPC_new::TryBuildMoveCandidate(const FVector& DesiredWorldDirection, FExpl
 		return false;
 	}
 
-	const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-	const FVector StartActorLocation = GetActorLocation();
-	const FVector StartFootLocation = StartActorLocation - FVector(0.0f, 0.0f, CapsuleHalfHeight);
-	const FVector DesiredFootLocation = StartFootLocation + Dir2D * ProbeStepDistance;
+	const FVector StartLocation = GetActorLocation();
+	const FVector DesiredLocation = StartLocation + Dir2D * ProbeStepDistance;
 
 	FNavLocation ProjectedLocation;
 	const FVector QueryExtent(GridSize * 0.5f, GridSize * 0.5f, 200.0f);
-	if (!NavSys->ProjectPointToNavigation(DesiredFootLocation, ProjectedLocation, QueryExtent))
+	if (!NavSys->ProjectPointToNavigation(DesiredLocation, ProjectedLocation, QueryExtent))
 	{
 		return false;
 	}
 
-	const FVector NavFootLocation = ProjectedLocation.Location;
-	if (FVector::Dist2D(StartFootLocation, NavFootLocation) < 10.0f)
+	const FVector TargetLocation = ProjectedLocation.Location;
+	if (FVector::Dist2D(StartLocation, TargetLocation) < 10.0f)
 	{
 		return false;
 	}
 
-	if (FMath::Abs(NavFootLocation.Z - StartFootLocation.Z) > MaxStepHeight)
+	if (FMath::Abs(TargetLocation.Z - StartLocation.Z) > MaxStepHeight)
 	{
 		return false;
 	}
 
-	if (!IsLocationValidForNPC(NavFootLocation))
+	if (!IsLocationValidForNPC(TargetLocation))
 	{
 		return false;
 	}
 
-	const FVector ActorTargetLocation = NavFootLocation + FVector(0.0f, 0.0f, CapsuleHalfHeight);
-	if (!IsMovePathCollisionFree(StartActorLocation, ActorTargetLocation))
+	if (!IsMovePathCollisionFree(StartLocation, TargetLocation))
 	{
 		return false;
 	}
 
-	if (bRequireCameraCollisionFreeForMoveCandidate)
+	const FRotator CurrentCameraWorldRot = GetCameraBoom() ? GetCameraBoom()->GetComponentRotation() : FRotator(CameraBoomPitch, 0.0f, 0.0f);
+	if (!IsCameraPoseCollisionFree(TargetLocation, CurrentCameraWorldRot))
 	{
-		const FRotator CurrentCameraWorldRot = GetCameraBoom() ? GetCameraBoom()->GetComponentRotation() : FRotator(CameraBoomPitch, 0.0f, 0.0f);
-		if (!IsCameraPoseCollisionFree(ActorTargetLocation, CurrentCameraWorldRot))
-		{
-			return false;
-		}
+		return false;
 	}
 
-	OutCandidate.WorldDirection = (ActorTargetLocation - StartActorLocation).GetSafeNormal2D();
-	OutCandidate.NavFootLocation = NavFootLocation;
-	OutCandidate.ActorTargetLocation = ActorTargetLocation;
-	OutCandidate.VisitValue = GetVisitedValueAtLocation(NavFootLocation);
+	OutCandidate.WorldDirection = (TargetLocation - StartLocation).GetSafeNormal2D();
+	OutCandidate.TargetLocation = TargetLocation;
+	OutCandidate.VisitValue = GetVisitedValueAtLocation(TargetLocation);
 	OutCandidate.Weight = FMath::Exp(-OutCandidate.VisitValue * ExplorationBias);
-
+		
 	if (bDebugDrawExploreCandidates)
 	{
 		const FColor Color = FColor::MakeRedToGreenColorFromScalar(FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitValue), 0.0f, 1.0f));
-		DrawDebugSphere(GetWorld(), ActorTargetLocation, 12.0f, 8, Color, false, 0.2f);
-		DrawDebugLine(GetWorld(), StartActorLocation, ActorTargetLocation, Color, false, 0.2f, 0, 1.5f);
+		DrawDebugSphere(GetWorld(), TargetLocation + FVector(0.0f, 0.0f, 25.0f), 10.0f, 8, Color, false, 0.15f);
+		DrawDebugLine(GetWorld(), StartLocation + FVector(0.0f, 0.0f, 5.0f), TargetLocation + FVector(0.0f, 0.0f, 5.0f), Color, false, 0.15f, 0, 1.5f);
 	}
 
 	return true;
@@ -351,101 +242,102 @@ int32 ANPC_new::SampleWeightedCandidateIndex(const TArray<FExploreMoveCandidate>
 	return Candidates.Num() - 1;
 }
 
-bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
+bool ANPC_new::IsMovePathCollisionFree(const FVector& StartLocation, const FVector& EndLocation) const
 {
-	UWorld* World = GetWorld();
-	const UCapsuleComponent* Capsule = GetCapsuleComponent();
-	if (!World || !Capsule)
+	if (!GetWorld())
 	{
 		return false;
 	}
 
-	const float CapsuleRadius = Capsule->GetScaledCapsuleRadius();
+	const UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (!Capsule)
+	{
+		return false;
+	}
+
+	const float CapsuleRadius = Capsule->GetScaledCapsuleRadius() + 10.0f;
 	const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const FVector CapsuleCenter = FVector(EndLocation.X, EndLocation.Y, 10.0f + EndLocation.Z + CapsuleHalfHeight);
 	const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(NPCNewMoveSweep), false, this);
+	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 
-	FHitResult HitResult;
-	const bool bHitStatic = World->SweepSingleByChannel(
-		HitResult,
-		StartActorLocation,
-		EndActorLocation,
-		FQuat::Identity,
-		ECC_WorldStatic,
-		CapsuleShape,
-		Params);
-	if (bHitStatic)
+	const TArray<ECollisionChannel> Channels = {
+		ECollisionChannel::ECC_Pawn,
+	};
+
+	for (const ECollisionChannel Channel : Channels)
 	{
-		return false;
+		const bool bHasOverlap = GetWorld()->OverlapAnyTestByChannel(
+			CapsuleCenter,
+			FQuat::Identity,
+			Channel,
+			CapsuleShape,
+			Params);
+
+		if (bHasOverlap)
+		{
+			if (bDebugDrawExploreCandidates)
+			{
+				DrawDebugCapsule(GetWorld(), CapsuleCenter, CapsuleHalfHeight, CapsuleRadius, FQuat::Identity, FColor::Red, false, 0.15f);
+			}
+			return false;
+		}
 	}
 
-	const bool bHitDynamic = World->SweepSingleByChannel(
-		HitResult,
-		StartActorLocation,
-		EndActorLocation,
-		FQuat::Identity,
-		ECC_WorldDynamic,
-		CapsuleShape,
-		Params);
-	if (bHitDynamic)
+	if (bDebugDrawExploreCandidates)
 	{
-		return false;
+		DrawDebugCapsule(GetWorld(), CapsuleCenter, CapsuleHalfHeight, CapsuleRadius, FQuat::Identity, FColor::Green, false, 0.15f);
 	}
 
 	return true;
 }
 
-bool ANPC_new::IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& InDesiredCameraWorldRotation) const
+bool ANPC_new::IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& DesiredCameraWorldRotation) const
 {
 	const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-	UWorld* World = GetWorld();
-	if (!World || !CameraBoomComp)
+	if (!GetWorld() || !CameraBoomComp)
 	{
 		return false;
 	}
 
-	const FVector BoomOrigin = ActorLocation + CameraBoomComp->GetRelativeLocation();
-	const FVector CameraEnd = BoomOrigin - InDesiredCameraWorldRotation.Vector() * CameraBoomComp->TargetArmLength;
-	const FCollisionShape ProbeShape = FCollisionShape::MakeSphere(CameraCollisionProbeRadius);
+	const FVector CameraStart = ActorLocation + FVector(0.0f, 0.0f, 50.0f);
+	const FVector CameraPos = CameraStart - DesiredCameraWorldRotation.Vector() * CameraBoomComp->TargetArmLength;
+	const float CameraRadius = CameraCollisionProbeRadius > 0.0f ? CameraCollisionProbeRadius : 20.0f;
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(NPCNewCameraSweep), false, this);
+	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 
+	const bool bHasOverlap = GetWorld()->OverlapAnyTestByChannel(
+		CameraPos,
+		FQuat::Identity,
+		ECollisionChannel::ECC_Camera,
+		FCollisionShape::MakeSphere(CameraRadius),
+		Params);
+
 	FHitResult HitResult;
-	const bool bHitStatic = World->SweepSingleByChannel(
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(
 		HitResult,
-		BoomOrigin,
-		CameraEnd,
-		FQuat::Identity,
-		ECC_WorldStatic,
-		ProbeShape,
+		CameraStart,
+		CameraPos,
+		ECollisionChannel::ECC_Camera,
 		Params);
-	if (bHitStatic)
+
+	const bool bBlocked = bHasOverlap || (bHit && HitResult.Distance < CameraBoomComp->TargetArmLength);
+
+	if (bDebugDrawExploreCandidates)
 	{
-		return false;
+		DrawDebugLine(GetWorld(), CameraStart, CameraPos, bBlocked ? FColor::Red : FColor::Blue, false, 0.15f, 0, 1.0f);
+		DrawDebugSphere(GetWorld(), CameraPos, CameraRadius, 10, bBlocked ? FColor::Red : FColor::Blue, false, 0.15f);
 	}
 
-	const bool bHitDynamic = World->SweepSingleByChannel(
-		HitResult,
-		BoomOrigin,
-		CameraEnd,
-		FQuat::Identity,
-		ECC_WorldDynamic,
-		ProbeShape,
-		Params);
-	if (bHitDynamic)
-	{
-		return false;
-	}
-
-	return true;
+	return !bBlocked;
 }
 
-bool ANPC_new::ChooseRandomCameraAction(FRotator& OutDesiredRotation) const
+bool ANPC_new::TryApplyRandomCameraAction()
 {
-	const USpringArmComponent* CameraBoomComp = GetCameraBoom();
+	USpringArmComponent* CameraBoomComp = GetCameraBoom();
 	if (!CameraBoomComp)
 	{
 		return false;
@@ -476,6 +368,6 @@ bool ANPC_new::ChooseRandomCameraAction(FRotator& OutDesiredRotation) const
 	}
 
 	const int32 SelectedValidIndex = ValidIndices[FMath::RandRange(0, ValidIndices.Num() - 1)];
-	OutDesiredRotation = CandidateRotations[SelectedValidIndex];
+	CameraBoomComp->SetWorldRotation(CandidateRotations[SelectedValidIndex]);
 	return true;
 }
