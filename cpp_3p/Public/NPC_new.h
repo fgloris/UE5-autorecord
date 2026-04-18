@@ -5,6 +5,7 @@
 #include "NPC_new.generated.h"
 
 class UNavigationSystemV1;
+class UCharacterMovementComponent;
 
 UCLASS()
 class CPP_3P_API ANPC_new : public ANPC
@@ -14,8 +15,23 @@ class CPP_3P_API ANPC_new : public ANPC
 public:
 	ANPC_new();
 
+	// 在 Event Tick 中持续调用：
+	// - 若当前没有活动目标，则采样一个新的低探索度目标点
+	// - 若当前已有活动目标，则平滑跟随到目标点，并平滑更新相机
 	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
 	void ExecuteNextStep(float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	bool HasActiveExploreMoveTarget() const { return bHasActiveExploreMoveTarget; }
+
+	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	FVector GetCurrentExploreMoveTarget() const { return CurrentExploreMoveTarget; }
+
+	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	void ClearExploreMoveTarget();
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Navigation|Explore")
+	void OnExploreMoveTargetReached(const FVector& ReachedLocation);
 
 protected:
 	virtual void BeginPlay() override;
@@ -35,6 +51,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float ExplorationBias;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float MoveAcceptanceRadius;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float MoveInputScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float ActorYawInterpSpeed;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
 	float CameraYawStepDegrees;
 
@@ -49,6 +74,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
 	float CameraCollisionProbeRadius;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float CameraRotationInterpSpeed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
 	bool bUpdateVisitedBeforeSampling;
@@ -67,5 +95,17 @@ private:
 
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
 	bool IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& DesiredCameraWorldRotation) const;
-	bool TryApplyRandomCameraAction();
+	bool ChooseRandomCameraAction(FRotator& OutDesiredRotation) const;
+
+	void TryStartNewExploreMove();
+	void UpdateMoveFollowing(float DeltaTime);
+	void UpdateCameraSmoothing(float DeltaTime);
+
+private:
+	bool bHasActiveExploreMoveTarget = false;
+	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
+	FVector CurrentExploreMoveNavFootLocation = FVector::ZeroVector;
+
+	bool bHasDesiredCameraWorldRotation = false;
+	FRotator DesiredCameraWorldRotation = FRotator::ZeroRotator;
 };
