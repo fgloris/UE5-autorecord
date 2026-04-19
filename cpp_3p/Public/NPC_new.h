@@ -7,6 +7,19 @@
 class UNavigationSystemV1;
 class UCharacterMovementComponent;
 
+UENUM()
+enum class ENPCExploreMoveAction : uint8
+{
+	W,
+	S,
+	A,
+	D,
+	WA,
+	WD,
+	SA,
+	SD
+};
+
 UCLASS()
 class CPP_3P_API ANPC_new : public ANPC
 {
@@ -16,8 +29,8 @@ public:
 	ANPC_new();
 
 	// 在 Event Tick 中持续调用：
-	// - 若当前没有活动目标，则采样一个新的低探索度目标点
-	// - 若当前已有活动目标，则平滑跟随到目标点，并平滑更新相机
+	// - 若当前没有活动动作，则采样一个新的低探索度动作（W/A/S/D及其组合）
+	// - 若当前已有活动动作，则持续执行移动动作，同时平滑更新相机
 	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
 	void ExecuteNextStep(float DeltaTime);
 
@@ -38,6 +51,7 @@ protected:
 
 	struct FExploreMoveCandidate
 	{
+		ENPCExploreMoveAction Action = ENPCExploreMoveAction::W;
 		FVector WorldDirection = FVector::ZeroVector;
 		FVector NavFootLocation = FVector::ZeroVector;      // NavMesh投影出来的“脚底点”
 		FVector ActorTargetLocation = FVector::ZeroVector;  // 真正用于Actor移动的“胶囊中心点”
@@ -93,7 +107,9 @@ private:
 	void FollowCameraMovement(float DeltaTime);
 
 	void BuildReachableMoveCandidates(TArray<FExploreMoveCandidate>& OutCandidates) const;
+	bool TryBuildMoveCandidateForAction(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const;
 	bool TryBuildMoveCandidate(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
+	bool GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const;
 	float GetVisitedValueAtLocation(const FVector& WorldLocation) const;
 	int32 SampleWeightedCandidateIndex(const TArray<FExploreMoveCandidate>& Candidates) const;
 
@@ -105,6 +121,10 @@ private:
 	bool bHasActiveExploreMoveTarget = false;
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
 	FVector CurrentExploreMoveNavFootLocation = FVector::ZeroVector;
+
+	ENPCExploreMoveAction CurrentExploreMoveAction = ENPCExploreMoveAction::W;
+	float CurrentExploreMoveTravelDistance = 0.0f;
+	FVector CurrentExploreMoveLastLocation = FVector::ZeroVector;
 
 	bool bHasDesiredCameraWorldRotation = false;
 	FRotator DesiredCameraWorldRotation = FRotator::ZeroRotator;

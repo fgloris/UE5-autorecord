@@ -50,6 +50,7 @@ void ANPC_new::ExecuteNextStep(float DeltaTime)
         ExploreOneStep();
     }
 
+    // 移动动作与相机动作并行执行
     FollowCharacterMovement(DeltaTime);
     FollowCameraMovement(DeltaTime);
 
@@ -64,10 +65,12 @@ void ANPC_new::ClearExploreMoveTarget()
     bHasActiveExploreMoveTarget = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
     CurrentExploreMoveNavFootLocation = FVector::ZeroVector;
+    CurrentExploreMoveTravelDistance = 0.0f;
+    CurrentExploreMoveLastLocation = FVector::ZeroVector;
 }
 
 
-// 寻路，只寻一步
+// 寻路，只寻一步（动作层只采样W/A/S/D及其组合）
 void ANPC_new::ExploreOneStep()
 {
     if (bUpdateVisitedBeforeSampling)
@@ -90,8 +93,11 @@ void ANPC_new::ExploreOneStep()
 
     const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
     bHasActiveExploreMoveTarget = true;
+    CurrentExploreMoveAction = Picked.Action;
     CurrentExploreMoveTarget = Picked.ActorTargetLocation;
     CurrentExploreMoveNavFootLocation = Picked.NavFootLocation;
+    CurrentExploreMoveTravelDistance = 0.0f;
+    CurrentExploreMoveLastLocation = GetActorLocation();
 
     FRotator ChosenCameraRot;
     if (ChooseRandomCameraAction(ChosenCameraRot))
@@ -117,19 +123,33 @@ void ANPC_new::FollowCharacterMovement(float DeltaTime)
         return;
     }
 
-    FVector ToTarget = CurrentExploreMoveTarget - GetActorLocation();
-    ToTarget.Z = 0.0f;
-    const float Dist2D = ToTarget.Size();
-    if (Dist2D <= MoveAcceptanceRadius)
+    const FVector CurrentLocation = GetActorLocation();
+    if (!CurrentExploreMoveLastLocation.IsNearlyZero())
     {
-        const FVector ReachedLocation = CurrentExploreMoveTarget;
+        CurrentExploreMoveTravelDistance += FVector::Dist2D(CurrentLocation, CurrentExploreMoveLastLocation);
+    }
+    CurrentExploreMoveLastLocation = CurrentLocation;
+
+    if (CurrentExploreMoveTravelDistance >= FMath::Max(ProbeStepDistance - MoveAcceptanceRadius, MoveAcceptanceRadius))
+    {
+        const FVector ReachedLocation = CurrentLocation;
         ClearExploreMoveTarget();
         UpdateVisitedStatsAtCurrentPosition();
         OnExploreMoveTargetReached(ReachedLocation);
         return;
     }
 
-    const FVector MoveDir = ToTarget.GetSafeNormal();
+    FExploreMoveCandidate RuntimeCandidate;
+    if (!TryBuildMoveCandidateForAction(CurrentExploreMoveAction, RuntimeCandidate))
+    {
+        ClearExploreMoveTarget();
+        return;
+    }
+
+    CurrentExploreMoveTarget = RuntimeCandidate.ActorTargetLocation;
+    CurrentExploreMoveNavFootLocation = RuntimeCandidate.NavFootLocation;
+
+    const FVector MoveDir = RuntimeCandidate.WorldDirection.GetSafeNormal2D();
     if (MoveDir.IsNearlyZero())
     {
         return;
@@ -171,10 +191,51 @@ void ANPC_new::BuildReachableMoveCandidates(TArray<FExploreMoveCandidate>& OutCa
 {
     OutCandidates.Reset();
 
+    const ENPCExploreMoveAction AllActions[8] =
+    {
+        ENPCExploreMoveAction::W,
+        ENPCExploreMoveAction::A,
+        ENPCExploreMoveAction::S,
+        ENPCExploreMoveAction::D,
+        ENPCExploreMoveAction::WA,
+        ENPCExploreMoveAction::WD,
+        ENPCExploreMoveAction::SA,
+        ENPCExploreMoveAction::SD
+    };
+
+    for (ENPCExploreMoveAction Action : AllActions)
+    {
+        FExploreMoveCandidate Candidate;
+        if (TryBuildMoveCandidateForAction(Action, Candidate))
+        {
+            OutCandidates.Add(Candidate);
+        }
+    }
+}
+
+bool ANPC_new::TryBuildMoveCandidateForAction(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const
+{
+    FVector DesiredWorldDirection = FVector::ZeroVector;
+    if (!GetWorldDirectionForAction(Action, DesiredWorldDirection))
+    {
+        return false;
+    }
+
+    if (!TryBuildMoveCandidate(DesiredWorldDirection, OutCandidate))
+    {
+        return false;
+    }
+
+    OutCandidate.Action = Action;
+    return true;
+}
+
+bool ANPC_new::GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const
+{
     const USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (!CameraBoomComp)
     {
-        return;
+        return false;
     }
 
     FVector CamForward = CameraBoomComp->GetForwardVector();
@@ -193,25 +254,38 @@ void ANPC_new::BuildReachableMoveCandidates(TArray<FExploreMoveCandidate>& OutCa
         CamRight = GetActorRightVector().GetSafeNormal2D();
     }
 
-    TArray<FVector> DesiredDirections;
-    DesiredDirections.Reserve(8);
-    DesiredDirections.Add(CamForward);
-    DesiredDirections.Add(-CamForward);
-    DesiredDirections.Add(CamRight);
-    DesiredDirections.Add(-CamRight);
-    DesiredDirections.Add((CamForward + CamRight).GetSafeNormal());
-    DesiredDirections.Add((CamForward - CamRight).GetSafeNormal());
-    DesiredDirections.Add((-CamForward + CamRight).GetSafeNormal());
-    DesiredDirections.Add((-CamForward - CamRight).GetSafeNormal());
-
-    for (const FVector& Dir : DesiredDirections)
+    switch (Action)
     {
-        FExploreMoveCandidate Candidate;
-        if (TryBuildMoveCandidate(Dir, Candidate))
-        {
-            OutCandidates.Add(Candidate);
-        }
+    case ENPCExploreMoveAction::W:
+        OutDirection = CamForward;
+        break;
+    case ENPCExploreMoveAction::A:
+        OutDirection = -CamRight;
+        break;
+    case ENPCExploreMoveAction::S:
+        OutDirection = -CamForward;
+        break;
+    case ENPCExploreMoveAction::D:
+        OutDirection = CamRight;
+        break;
+    case ENPCExploreMoveAction::WA:
+        OutDirection = (CamForward - CamRight).GetSafeNormal();
+        break;
+    case ENPCExploreMoveAction::WD:
+        OutDirection = (CamForward + CamRight).GetSafeNormal();
+        break;
+    case ENPCExploreMoveAction::SA:
+        OutDirection = (-CamForward - CamRight).GetSafeNormal();
+        break;
+    case ENPCExploreMoveAction::SD:
+        OutDirection = (-CamForward + CamRight).GetSafeNormal();
+        break;
+    default:
+        OutDirection = FVector::ZeroVector;
+        break;
     }
+
+    return !OutDirection.IsNearlyZero();
 }
 
 bool ANPC_new::TryBuildMoveCandidate(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
