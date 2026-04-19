@@ -114,7 +114,7 @@ private:
 	bool bIsExecutingExploreAction = false;
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
 
-	FVector CurrentExploreMoveDirection = FVector::ZeroVector;
+	ENPCExploreMoveAction CurrentExploreMoveAction = ENPCExploreMoveAction::W;
 	float CurrentExploreActionElapsed = 0.0f;
 
 	bool bHasDesiredCameraWorldRotation = false;

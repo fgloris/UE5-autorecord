@@ -55,7 +55,7 @@ void ANPC_new::ClearExploreMoveTarget()
 {
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
-    CurrentExploreMoveDirection = FVector::ZeroVector;
+    CurrentExploreMoveAction = ENPCExploreMoveAction::W;
     CurrentExploreActionElapsed = 0.0f;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPCExploreCameraAction::None;
@@ -92,7 +92,7 @@ void ANPC_new::StartExploreAction()
 
     const FExploreMoveCandidate& Picked = Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
     bIsExecutingExploreAction = true;
-    CurrentExploreMoveDirection = Picked.WorldDirection.GetSafeNormal2D();
+    CurrentExploreMoveAction = Picked.Action;
     CurrentExploreMoveTarget = Picked.LandingActorLocation;
     CurrentExploreActionElapsed = 0.0f;
     GetMoveActionSignals(Picked.Action, CurrentRecorderWS, CurrentRecorderAD);
@@ -119,26 +119,34 @@ void ANPC_new::ExecuteExploreAction(float DeltaTime)
     const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / Duration, 0.0f, 1.0f);
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
-    if (!MoveComp || CurrentExploreMoveDirection.IsNearlyZero())
+    if (!MoveComp)
     {
         ClearExploreMoveTarget();
         return;
     }
-
-    MoveComp->SetMovementMode(MOVE_Walking);
-    const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
-    AddMovementInput(CurrentExploreMoveDirection, InputScale);
-
-    FRotator DesiredActorRot = CurrentExploreMoveDirection.Rotation();
-    DesiredActorRot.Pitch = 0.0f;
-    DesiredActorRot.Roll = 0.0f;
-    SetActorRotation(FQuat::Slerp(GetActorRotation().Quaternion(), DesiredActorRot.Quaternion(), Alpha).Rotator());
 
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (CameraBoomComp && bHasDesiredCameraWorldRotation)
     {
         CameraBoomComp->SetWorldRotation(FQuat::Slerp(StartCameraWorldRotation.Quaternion(), DesiredCameraWorldRotation.Quaternion(), Alpha).Rotator());
     }
+
+    FVector FrameMoveDirection = FVector::ZeroVector;
+    if (!GetWorldDirectionForAction(CurrentExploreMoveAction, FrameMoveDirection))
+    {
+        ClearExploreMoveTarget();
+        return;
+    }
+    FrameMoveDirection = FrameMoveDirection.GetSafeNormal2D();
+
+    MoveComp->SetMovementMode(MOVE_Walking);
+    const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
+    AddMovementInput(FrameMoveDirection, InputScale);
+
+    FRotator DesiredActorRot = FrameMoveDirection.Rotation();
+    DesiredActorRot.Pitch = 0.0f;
+    DesiredActorRot.Roll = 0.0f;
+    SetActorRotation(FQuat::Slerp(GetActorRotation().Quaternion(), DesiredActorRot.Quaternion(), Alpha).Rotator());
 
     if (CurrentExploreActionElapsed >= Duration)
     {
