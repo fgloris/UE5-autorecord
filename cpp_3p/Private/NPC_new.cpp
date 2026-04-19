@@ -17,7 +17,7 @@ ANPC_new::ANPC_new()
 
     CameraYawStepDegrees = 30.0f;
     CameraPitchStepDegrees = 15.0f;
-    MaxCameraPitchOffsetActionCount = 4;
+    MaxCameraPitchOffsetActionCount = 2;
     CameraPitchHoldToleranceDegrees = 1.0f;
 
     bUpdateVisitedBeforeSampling = true;
@@ -496,7 +496,7 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
 ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
     const float CameraPitchCenter = -15.0f;
-    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 15.0f);
+    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -45.0f, 15.0f);
     const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
 
     UpdatePitchOffsetHoldState(CurrentPitchOffset);
