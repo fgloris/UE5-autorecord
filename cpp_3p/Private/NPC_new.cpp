@@ -13,14 +13,13 @@ ANPC_new::ANPC_new()
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = true;
 
-    ProbeStepDistance = 100.0f;
-    ExploreActionDuration = 0.5f;
-    MoveInputScale = 1.0f;
+    ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 15.0f;
+    CameraYawStepDegrees = 30.0f;
     CameraPitchStepDegrees = 15.0f;
-    MinCameraPitchDegrees = -30.0f;
-    MaxCameraPitchDegrees = 30.0f;
+    MinCameraPitchDegrees = -15.0f;
+    MaxCameraPitchOffsetActionCount = 4;
+    CameraPitchHoldToleranceDegrees = 1.0f;
 
     bUpdateVisitedBeforeSampling = true;
     bDebugDrawExploreCandidates = false;
@@ -59,8 +58,17 @@ void ANPC_new::ClearExploreMoveTarget()
     CurrentExploreMoveDirection = FVector::ZeroVector;
     CurrentExploreActionElapsed = 0.0f;
     bHasDesiredCameraWorldRotation = false;
+    CurrentExploreCameraAction = ENPCExploreCameraAction::None;
     StartCameraWorldRotation = FRotator::ZeroRotator;
     DesiredCameraWorldRotation = FRotator::ZeroRotator;
+}
+
+void ANPC_new::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const
+{
+    OutWS = CurrentRecorderWS;
+    OutAD = CurrentRecorderAD;
+    OutLR = CurrentRecorderLR;
+    OutUD = CurrentRecorderUD;
 }
 
 void ANPC_new::StartExploreAction()
@@ -87,14 +95,13 @@ void ANPC_new::StartExploreAction()
     CurrentExploreMoveDirection = Picked.WorldDirection.GetSafeNormal2D();
     CurrentExploreMoveTarget = Picked.LandingActorLocation;
     CurrentExploreActionElapsed = 0.0f;
+    GetMoveActionSignals(Picked.Action, CurrentRecorderWS, CurrentRecorderAD);
 
     const USpringArmComponent* CameraBoomComp = GetCameraBoom();
     StartCameraWorldRotation = CameraBoomComp ? CameraBoomComp->GetComponentRotation() : FRotator(CameraBoomPitch, 0.0f, 0.0f);
-    bHasDesiredCameraWorldRotation = ChooseRandomCameraAction(DesiredCameraWorldRotation);
-    if (!bHasDesiredCameraWorldRotation)
-    {
-        DesiredCameraWorldRotation = StartCameraWorldRotation;
-    }
+    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraWorldRotation, DesiredCameraWorldRotation);
+    GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
+    bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPCExploreCameraAction::None;
 }
 
 void ANPC_new::ExecuteExploreAction(float DeltaTime)
@@ -119,7 +126,7 @@ void ANPC_new::ExecuteExploreAction(float DeltaTime)
     }
 
     MoveComp->SetMovementMode(MOVE_Walking);
-    const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (MoveInputScale * EffectiveDeltaTime / DeltaTime) : 0.0f;
+    const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
     AddMovementInput(CurrentExploreMoveDirection, InputScale);
 
     FRotator DesiredActorRot = CurrentExploreMoveDirection.Rotation();
@@ -248,6 +255,46 @@ bool ANPC_new::GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector&
     return !OutDirection.IsNearlyZero();
 }
 
+void ANPC_new::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const
+{
+    OutWS = 0;
+    OutAD = 0;
+
+    switch (Action)
+    {
+    case ENPCExploreMoveAction::W:
+        OutWS = 1;
+        break;
+    case ENPCExploreMoveAction::S:
+        OutWS = 2;
+        break;
+    case ENPCExploreMoveAction::A:
+        OutAD = 2;
+        break;
+    case ENPCExploreMoveAction::D:
+        OutAD = 1;
+        break;
+    case ENPCExploreMoveAction::WA:
+        OutWS = 1;
+        OutAD = 2;
+        break;
+    case ENPCExploreMoveAction::WD:
+        OutWS = 1;
+        OutAD = 1;
+        break;
+    case ENPCExploreMoveAction::SA:
+        OutWS = 2;
+        OutAD = 2;
+        break;
+    case ENPCExploreMoveAction::SD:
+        OutWS = 2;
+        OutAD = 1;
+        break;
+    default:
+        break;
+    }
+}
+
 bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
 {
     UWorld* World = GetWorld();
@@ -257,8 +304,9 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     }
 
     UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    const UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     const UCapsuleComponent* Capsule = GetCapsuleComponent();
-    if (!NavSys || !Capsule)
+    if (!NavSys || !MoveComp || !Capsule)
     {
         return false;
     }
@@ -272,6 +320,12 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     }
 
     const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+    const float ProbeStepDistance = MoveComp->MaxWalkSpeed * FMath::Max(ExploreActionDuration, 0.0f);
+    if (ProbeStepDistance <= KINDA_SMALL_NUMBER)
+    {
+        return false;
+    }
+
     const FVector StartActorLocation = GetActorLocation();
     const FVector StartFootLocation = StartActorLocation - FVector(0.0f, 0.0f, CapsuleHalfHeight);
     const FVector DesiredFootLocation = StartFootLocation + Dir2D * ProbeStepDistance;
@@ -359,28 +413,153 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
     return true;
 }
 
-bool ANPC_new::ChooseRandomCameraAction(FRotator& OutDesiredRotation) const
+ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
-    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    if (!CameraBoomComp)
+    const float MaxPitchOffset = FMath::Abs(MinCameraPitchDegrees);
+    const float CurrentPitchOffset = FMath::Clamp(
+        CurrentCameraRotation.Pitch - CameraBoomPitch,
+        -MaxPitchOffset,
+        MaxPitchOffset);
+
+    UpdatePitchOffsetHoldState(CurrentPitchOffset);
+
+    const int32 LRSignal = FMath::RandRange(0, 2);
+    int32 UDSignal = FMath::RandRange(0, 2);
+
+    if (FMath::Abs(CurrentPitchOffset) > CameraPitchHoldToleranceDegrees &&
+        SameNonZeroCameraPitchOffsetActionCount > MaxCameraPitchOffsetActionCount)
     {
-        return false;
+        UDSignal = (CurrentPitchOffset > 0.0f) ? 2 : 1;
     }
 
-    const FRotator CurrentRot = CameraBoomComp->GetComponentRotation();
-    TArray<FRotator> CandidateRotations;
-    CandidateRotations.Reserve(4);
-
-    CandidateRotations.Add(FRotator(CurrentRot.Pitch, CurrentRot.Yaw - CameraYawStepDegrees, CurrentRot.Roll));
-    CandidateRotations.Add(FRotator(CurrentRot.Pitch, CurrentRot.Yaw + CameraYawStepDegrees, CurrentRot.Roll));
-    CandidateRotations.Add(FRotator(FMath::Clamp(CurrentRot.Pitch + CameraPitchStepDegrees, MinCameraPitchDegrees, MaxCameraPitchDegrees), CurrentRot.Yaw, CurrentRot.Roll));
-    CandidateRotations.Add(FRotator(FMath::Clamp(CurrentRot.Pitch - CameraPitchStepDegrees, MinCameraPitchDegrees, MaxCameraPitchDegrees), CurrentRot.Yaw, CurrentRot.Roll));
-
-    if (CandidateRotations.Num() <= 0)
+    float DesiredPitchOffset = CurrentPitchOffset;
+    if (UDSignal == 1)
     {
-        return false;
+        DesiredPitchOffset += CameraPitchStepDegrees;
+    }
+    else if (UDSignal == 2)
+    {
+        DesiredPitchOffset -= CameraPitchStepDegrees;
+    }
+    DesiredPitchOffset = FMath::Clamp(DesiredPitchOffset, -MaxPitchOffset, MaxPitchOffset);
+
+    int32 EffectiveUDSignal = 0;
+    if (DesiredPitchOffset > CurrentPitchOffset + KINDA_SMALL_NUMBER)
+    {
+        EffectiveUDSignal = 1;
+    }
+    else if (DesiredPitchOffset < CurrentPitchOffset - KINDA_SMALL_NUMBER)
+    {
+        EffectiveUDSignal = 2;
     }
 
-    OutDesiredRotation = CandidateRotations[FMath::RandRange(0, CandidateRotations.Num() - 1)];
-    return true;
+    float DesiredYaw = CurrentCameraRotation.Yaw;
+    if (LRSignal == 1)
+    {
+        DesiredYaw -= CameraYawStepDegrees;
+    }
+    else if (LRSignal == 2)
+    {
+        DesiredYaw += CameraYawStepDegrees;
+    }
+
+    OutDesiredRotation = FRotator(CameraBoomPitch + DesiredPitchOffset, DesiredYaw, CurrentCameraRotation.Roll);
+    return MakeCameraAction(LRSignal, EffectiveUDSignal);
+}
+
+ENPCExploreCameraAction ANPC_new::MakeCameraAction(int32 LRSignal, int32 UDSignal) const
+{
+    if (LRSignal == 1 && UDSignal == 1)
+    {
+        return ENPCExploreCameraAction::LU;
+    }
+    if (LRSignal == 1 && UDSignal == 2)
+    {
+        return ENPCExploreCameraAction::LD;
+    }
+    if (LRSignal == 2 && UDSignal == 1)
+    {
+        return ENPCExploreCameraAction::RU;
+    }
+    if (LRSignal == 2 && UDSignal == 2)
+    {
+        return ENPCExploreCameraAction::RD;
+    }
+    if (LRSignal == 1)
+    {
+        return ENPCExploreCameraAction::L;
+    }
+    if (LRSignal == 2)
+    {
+        return ENPCExploreCameraAction::R;
+    }
+    if (UDSignal == 1)
+    {
+        return ENPCExploreCameraAction::U;
+    }
+    if (UDSignal == 2)
+    {
+        return ENPCExploreCameraAction::D;
+    }
+    return ENPCExploreCameraAction::None;
+}
+
+void ANPC_new::GetCameraActionSignals(ENPCExploreCameraAction Action, int32& OutLR, int32& OutUD) const
+{
+    OutLR = 0;
+    OutUD = 0;
+
+    switch (Action)
+    {
+    case ENPCExploreCameraAction::L:
+        OutLR = 1;
+        break;
+    case ENPCExploreCameraAction::R:
+        OutLR = 2;
+        break;
+    case ENPCExploreCameraAction::U:
+        OutUD = 1;
+        break;
+    case ENPCExploreCameraAction::D:
+        OutUD = 2;
+        break;
+    case ENPCExploreCameraAction::LU:
+        OutLR = 1;
+        OutUD = 1;
+        break;
+    case ENPCExploreCameraAction::LD:
+        OutLR = 1;
+        OutUD = 2;
+        break;
+    case ENPCExploreCameraAction::RU:
+        OutLR = 2;
+        OutUD = 1;
+        break;
+    case ENPCExploreCameraAction::RD:
+        OutLR = 2;
+        OutUD = 2;
+        break;
+    default:
+        break;
+    }
+}
+
+void ANPC_new::UpdatePitchOffsetHoldState(float CurrentPitchOffset)
+{
+    if (FMath::Abs(CurrentPitchOffset) <= CameraPitchHoldToleranceDegrees)
+    {
+        LastNonZeroCameraPitchOffset = 0.0f;
+        SameNonZeroCameraPitchOffsetActionCount = 0;
+        return;
+    }
+
+    if (FMath::Abs(CurrentPitchOffset - LastNonZeroCameraPitchOffset) <= CameraPitchHoldToleranceDegrees)
+    {
+        ++SameNonZeroCameraPitchOffsetActionCount;
+    }
+    else
+    {
+        LastNonZeroCameraPitchOffset = CurrentPitchOffset;
+        SameNonZeroCameraPitchOffsetActionCount = 1;
+    }
 }

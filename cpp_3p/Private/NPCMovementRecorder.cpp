@@ -2,6 +2,7 @@
 
 #include "NPCMovementRecorder.h"
 #include "NPC.h"  // 需要完整定义以访问FNPCNavigationState
+#include "NPC_new.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformFileManager.h"
@@ -151,6 +152,25 @@ void UNPCMovementRecorder::RecordFrameFromNPC(ANPC* NPC, const TArray<FNPCNaviga
 	FrameData.ad = 0;
 	FrameData.ud = 0; // ud始终为0
 	FrameData.lr = 0;
+
+	if (const ANPC_new* NPCNew = Cast<ANPC_new>(NPC))
+	{
+		if (bIsActuallyMoving)
+		{
+			NPCNew->GetCurrentRecorderControlSignals(FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud);
+		}
+
+		RecordingData.AddFrame(FrameData);
+		this->CurrentFrame++;
+
+		if (GEngine && this->CurrentFrame % 60 == 0)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Cyan,
+				FString::Printf(TEXT("Recording: Frame=%d, Time=%.2fs, ws=%d, ad=%d, lr=%d, ud=%d"),
+					this->CurrentFrame, this->ElapsedTime, FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud));
+		}
+		return;
+	}
 
 	// 计算移动方向和相机旋转方向
 	if (CurrentPath.IsValidIndex(CurrentPathIndex))

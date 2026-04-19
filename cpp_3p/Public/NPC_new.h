@@ -20,6 +20,20 @@ enum class ENPCExploreMoveAction : uint8
 	SD
 };
 
+UENUM()
+enum class ENPCExploreCameraAction : uint8
+{
+	None,
+	L,
+	R,
+	U,
+	D,
+	LU,
+	LD,
+	RU,
+	RD
+};
+
 UCLASS()
 class CPP_3P_API ANPC_new : public ANPC
 {
@@ -40,6 +54,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
 	void ClearExploreMoveTarget();
 
+	void GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Navigation|Explore")
 	void OnExploreMoveTargetReached(const FVector& ReachedLocation);
 
@@ -54,14 +70,8 @@ protected:
 		FVector LandingActorLocation = FVector::ZeroVector;
 	};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
-	float ProbeStepDistance;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float ExploreActionDuration;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.1", UIMin = "0.1"))
-	float MoveInputScale;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
 	float CameraYawStepDegrees;
@@ -73,7 +83,10 @@ protected:
 	float MinCameraPitchDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
-	float MaxCameraPitchDegrees;
+	int32 MaxCameraPitchOffsetActionCount;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
+	float CameraPitchHoldToleranceDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
 	bool bUpdateVisitedBeforeSampling;
@@ -89,9 +102,13 @@ private:
 	bool TryBuildActionCandidate(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const;
 	bool IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	bool GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const;
+	void GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
 
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
-	bool ChooseRandomCameraAction(FRotator& OutDesiredRotation) const;
+	ENPCExploreCameraAction ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation);
+	ENPCExploreCameraAction MakeCameraAction(int32 LRSignal, int32 UDSignal) const;
+	void GetCameraActionSignals(ENPCExploreCameraAction Action, int32& OutLR, int32& OutUD) const;
+	void UpdatePitchOffsetHoldState(float CurrentPitchOffset);
 
 private:
 	bool bIsExecutingExploreAction = false;
@@ -101,6 +118,15 @@ private:
 	float CurrentExploreActionElapsed = 0.0f;
 
 	bool bHasDesiredCameraWorldRotation = false;
+	ENPCExploreCameraAction CurrentExploreCameraAction = ENPCExploreCameraAction::None;
 	FRotator StartCameraWorldRotation = FRotator::ZeroRotator;
 	FRotator DesiredCameraWorldRotation = FRotator::ZeroRotator;
+
+	int32 CurrentRecorderWS = 0;
+	int32 CurrentRecorderAD = 0;
+	int32 CurrentRecorderLR = 0;
+	int32 CurrentRecorderUD = 0;
+
+	float LastNonZeroCameraPitchOffset = 0.0f;
+	int32 SameNonZeroCameraPitchOffsetActionCount = 0;
 };
