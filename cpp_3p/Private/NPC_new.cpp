@@ -8,6 +8,7 @@
 #include "NavigationSystem.h"
 #include "NPCMovementRecorder.h"
 
+// 继承自 ANPC
 ANPC_new::ANPC_new()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -19,10 +20,10 @@ ANPC_new::ANPC_new()
     MoveInputScale = 1.0f;
     ActorYawInterpSpeed = 10.0f;
 
-    CameraYawStepDegrees = 30.0f;
-    CameraPitchStepDegrees = 30.0f;
-    MinCameraPitchDegrees = -60.0f;
-    MaxCameraPitchDegrees = 60.0f;
+    CameraYawStepDegrees = 15.0f;
+    CameraPitchStepDegrees = 15.0f;
+    MinCameraPitchDegrees = -30.0f;
+    MaxCameraPitchDegrees = 30.0f;
     CameraCollisionProbeRadius = 20.0f;
     CameraRotationInterpSpeed = 6.0f;
 
@@ -34,13 +35,9 @@ ANPC_new::ANPC_new()
 void ANPC_new::BeginPlay()
 {
     Super::BeginPlay();
-
-    if (ProbeStepDistance <= KINDA_SMALL_NUMBER)
-    {
-        ProbeStepDistance = GridSize;
-    }
 }
 
+// 执行寻路+跟随路径的核心蓝图接口函数，接入 event tick即可
 void ANPC_new::ExecuteNextStep(float DeltaTime)
 {
     if (!GetWorld())
@@ -50,11 +47,11 @@ void ANPC_new::ExecuteNextStep(float DeltaTime)
 
     if (!bHasActiveExploreMoveTarget)
     {
-        TryStartNewExploreMove();
+        ExploreOneStep();
     }
 
-    UpdateMoveFollowing(DeltaTime);
-    UpdateCameraSmoothing(DeltaTime);
+    FollowCharacterMovement(DeltaTime);
+    FollowCameraMovement(DeltaTime);
 
     if (MovementRecorder && MovementRecorder->bIsRecording)
     {
@@ -69,7 +66,9 @@ void ANPC_new::ClearExploreMoveTarget()
     CurrentExploreMoveNavFootLocation = FVector::ZeroVector;
 }
 
-void ANPC_new::TryStartNewExploreMove()
+
+// 寻路，只寻一步
+void ANPC_new::ExploreOneStep()
 {
     if (bUpdateVisitedBeforeSampling)
     {
@@ -100,24 +99,11 @@ void ANPC_new::TryStartNewExploreMove()
         bHasDesiredCameraWorldRotation = true;
         DesiredCameraWorldRotation = ChosenCameraRot;
     }
-
-    if (bDebugDrawExploreCandidates)
-    {
-        DrawDebugSphere(GetWorld(), CurrentExploreMoveTarget, 18.0f, 12, FColor::Cyan, false, 0.5f);
-        DrawDebugDirectionalArrow(
-            GetWorld(),
-            GetActorLocation(),
-            CurrentExploreMoveTarget,
-            35.0f,
-            FColor::Cyan,
-            false,
-            0.5f,
-            0,
-            2.5f);
-    }
 }
 
-void ANPC_new::UpdateMoveFollowing(float DeltaTime)
+
+// 路径跟随（移动）
+void ANPC_new::FollowCharacterMovement(float DeltaTime)
 {
     if (!bHasActiveExploreMoveTarget)
     {
@@ -160,7 +146,8 @@ void ANPC_new::UpdateMoveFollowing(float DeltaTime)
     SetActorRotation(SmoothedActorRot);
 }
 
-void ANPC_new::UpdateCameraSmoothing(float DeltaTime)
+// 路径跟随（相机）
+void ANPC_new::FollowCameraMovement(float DeltaTime)
 {
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (!CameraBoomComp || !bHasDesiredCameraWorldRotation)
@@ -179,6 +166,7 @@ void ANPC_new::UpdateCameraSmoothing(float DeltaTime)
     }
 }
 
+// 构造邻居，被寻路函数调用
 void ANPC_new::BuildReachableMoveCandidates(TArray<FExploreMoveCandidate>& OutCandidates) const
 {
     OutCandidates.Reset();

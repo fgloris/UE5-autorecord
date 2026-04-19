@@ -88,6 +88,10 @@ protected:
 	bool bRequireCameraCollisionFreeForMoveCandidate;
 
 private:
+	void ExploreOneStep();
+	void FollowCharacterMovement(float DeltaTime);
+	void FollowCameraMovement(float DeltaTime);
+
 	void BuildReachableMoveCandidates(TArray<FExploreMoveCandidate>& OutCandidates) const;
 	bool TryBuildMoveCandidate(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	float GetVisitedValueAtLocation(const FVector& WorldLocation) const;
@@ -96,10 +100,6 @@ private:
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
 	bool IsCameraPoseCollisionFree(const FVector& ActorLocation, const FRotator& InDesiredCameraWorldRotation) const;
 	bool ChooseRandomCameraAction(FRotator& OutDesiredRotation) const;
-
-	void TryStartNewExploreMove();
-	void UpdateMoveFollowing(float DeltaTime);
-	void UpdateCameraSmoothing(float DeltaTime);
 
 private:
 	bool bHasActiveExploreMoveTarget = false;
