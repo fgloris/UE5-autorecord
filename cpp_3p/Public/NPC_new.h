@@ -42,21 +42,21 @@ class CPP_3P_API ANPC_new : public ANPC
 public:
 	ANPC_new();
 
-	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	UFUNCTION(BlueprintCallable, Category = "Explore")
 	void ExecuteNextStep(float DeltaTime);
 
-	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	UFUNCTION(BlueprintCallable, Category = "Explore")
 	bool HasActiveExploreMoveTarget() const { return bIsExecutingExploreAction; }
 
-	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	UFUNCTION(BlueprintCallable, Category = "Explore")
 	FVector GetCurrentExploreMoveTarget() const { return CurrentExploreMoveTarget; }
 
-	UFUNCTION(BlueprintCallable, Category = "Navigation|Explore")
+	UFUNCTION(BlueprintCallable, Category = "Explore")
 	void ClearExploreMoveTarget();
 
 	void GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const;
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Navigation|Explore")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Explore")
 	void OnExploreMoveTargetReached(const FVector& ReachedLocation);
 
 protected:
@@ -71,28 +71,28 @@ protected:
 		float VisitedScore = 0.0f;
 	};
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float ExploreActionDuration;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	float CameraYawStepDegrees;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	float CameraPitchStepDegrees;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	int32 MaxCameraPitchOffsetActionCount;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	float CameraPitchHoldToleranceDegrees;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	bool bUpdateVisitedBeforeSampling;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	bool bDebugDrawExploreCandidates;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float VisitedSoftmaxTemperature;
 
 private:

@@ -384,8 +384,9 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     {
         const float ColorScalar = FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitedScore), 0.0f, 1.0f);
         const FColor Color = FColor::MakeRedToGreenColorFromScalar(ColorScalar);
-        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, 0.2f);
-        DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, 0.2f, 0, 1.5f);
+        const float DrawDuration = FMath::Max(ExploreActionDuration, KINDA_SMALL_NUMBER);
+        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, DrawDuration);
+        DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, DrawDuration, 0, 1.5f);
     }
 
     return true;
