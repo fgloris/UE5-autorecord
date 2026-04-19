@@ -15,7 +15,7 @@ ANPC_new::ANPC_new()
 
     ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 45.0f;
+    CameraYawStepDegrees = 30.0f;
     CameraPitchStepDegrees = 15.0f;
     MaxCameraPitchOffsetActionCount = 2;
     CameraPitchHoldToleranceDegrees = 1.0f;
@@ -83,9 +83,11 @@ void ANPC_new::StartExploreAction()
 
     if (Candidates.Num() <= 0)
     {
-        if (bDebugDrawExploreCandidates)
+        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate"), *GetActorLabel());
+        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
+        if (GEngine)
         {
-            UE_LOG(LogTemp, Warning, TEXT("NPC_new[%s] no legal action this tick"), *GetActorLabel());
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, ErrorMessage);
         }
         return;
     }
