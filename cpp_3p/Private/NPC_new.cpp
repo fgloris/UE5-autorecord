@@ -15,7 +15,7 @@ ANPC_new::ANPC_new()
 
     ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 30.0f;
+    CameraYawStepDegrees = 45.0f;
     CameraPitchStepDegrees = 15.0f;
     MaxCameraPitchOffsetActionCount = 2;
     CameraPitchHoldToleranceDegrees = 1.0f;
@@ -283,26 +283,26 @@ void ANPC_new::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, 
         OutWS = 2;
         break;
     case ENPCExploreMoveAction::A:
-        OutAD = 2;
+        OutAD = 1;
         break;
     case ENPCExploreMoveAction::D:
-        OutAD = 1;
+        OutAD = 2;
         break;
     case ENPCExploreMoveAction::WA:
         OutWS = 1;
-        OutAD = 2;
+        OutAD = 1;
         break;
     case ENPCExploreMoveAction::WD:
         OutWS = 1;
-        OutAD = 1;
+        OutAD = 2;
         break;
     case ENPCExploreMoveAction::SA:
         OutWS = 2;
-        OutAD = 2;
+        OutAD = 1;
         break;
     case ENPCExploreMoveAction::SD:
         OutWS = 2;
-        OutAD = 1;
+        OutAD = 2;
         break;
     default:
         break;
