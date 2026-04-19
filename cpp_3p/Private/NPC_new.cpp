@@ -17,7 +17,6 @@ ANPC_new::ANPC_new()
 
     CameraYawStepDegrees = 30.0f;
     CameraPitchStepDegrees = 15.0f;
-    MinCameraPitchDegrees = -15.0f;
     MaxCameraPitchOffsetActionCount = 4;
     CameraPitchHoldToleranceDegrees = 1.0f;
 
@@ -496,11 +495,9 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
 
 ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
-    const float MaxPitchOffset = FMath::Abs(MinCameraPitchDegrees);
-    const float CurrentPitchOffset = FMath::Clamp(
-        CurrentCameraRotation.Pitch - CameraBoomPitch,
-        -MaxPitchOffset,
-        MaxPitchOffset);
+    const float CameraPitchCenter = -15.0f;
+    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 15.0f);
+    const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
 
     UpdatePitchOffsetHoldState(CurrentPitchOffset);
 
@@ -510,26 +507,26 @@ ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& Curre
     if (FMath::Abs(CurrentPitchOffset) > CameraPitchHoldToleranceDegrees &&
         SameNonZeroCameraPitchOffsetActionCount > MaxCameraPitchOffsetActionCount)
     {
-        UDSignal = (CurrentPitchOffset > 0.0f) ? 2 : 1;
+        UDSignal = (CurrentPitch > CameraPitchCenter) ? 1 : 2;
     }
 
-    float DesiredPitchOffset = CurrentPitchOffset;
+    float DesiredPitch = CurrentPitch;
     if (UDSignal == 1)
     {
-        DesiredPitchOffset += CameraPitchStepDegrees;
+        DesiredPitch -= CameraPitchStepDegrees;
     }
     else if (UDSignal == 2)
     {
-        DesiredPitchOffset -= CameraPitchStepDegrees;
+        DesiredPitch += CameraPitchStepDegrees;
     }
-    DesiredPitchOffset = FMath::Clamp(DesiredPitchOffset, -MaxPitchOffset, MaxPitchOffset);
+    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 15.0f);
 
     int32 EffectiveUDSignal = 0;
-    if (DesiredPitchOffset > CurrentPitchOffset + KINDA_SMALL_NUMBER)
+    if (DesiredPitch < CurrentPitch - KINDA_SMALL_NUMBER)
     {
         EffectiveUDSignal = 1;
     }
-    else if (DesiredPitchOffset < CurrentPitchOffset - KINDA_SMALL_NUMBER)
+    else if (DesiredPitch > CurrentPitch + KINDA_SMALL_NUMBER)
     {
         EffectiveUDSignal = 2;
     }
@@ -544,7 +541,7 @@ ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& Curre
         DesiredYaw += CameraYawStepDegrees;
     }
 
-    OutDesiredRotation = FRotator(CameraBoomPitch + DesiredPitchOffset, DesiredYaw, CurrentCameraRotation.Roll);
+    OutDesiredRotation = FRotator(DesiredPitch, DesiredYaw, CurrentCameraRotation.Roll);
     return MakeCameraAction(LRSignal, EffectiveUDSignal);
 }
 

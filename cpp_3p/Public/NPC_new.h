@@ -81,9 +81,6 @@ protected:
 	float CameraPitchStepDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
-	float MinCameraPitchDegrees;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")
 	int32 MaxCameraPitchOffsetActionCount;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Explore")

@@ -25,6 +25,7 @@ ANPC::ANPC()
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->SetAbsolute(false, true, false);
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
 	CameraBoom->TargetArmLength = CameraBoomLength;
 	CameraBoom->bUsePawnControlRotation = false;
 	CameraBoom->bDoCollisionTest = false;
@@ -40,6 +41,7 @@ void ANPC::BeginPlay()
 
 	if (CameraBoom)
 	{
+		CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
 		CameraBoom->TargetArmLength = CameraBoomLength;
 		CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, 0.0f, 0.0f));
 	}
