@@ -17,7 +17,7 @@ ANPC_new::ANPC_new()
 
     CameraYawStepDegrees = 30.0f;
     CameraPitchStepDegrees = 15.0f;
-    MaxCameraPitchOffsetActionCount = 2;
+    MaxCameraPitchOffsetActionCount = 1;
     CameraPitchHoldToleranceDegrees = 1.0f;
 
     bUpdateVisitedBeforeSampling = true;
@@ -92,6 +92,7 @@ void ANPC_new::StartExploreAction()
         return;
     }
 
+    // 查看是否有不是idle的动作（是不是被卡死了）
     bool bHasLegalMoveCandidate = false;
     for (const FExploreMoveCandidate& Candidate : Candidates)
     {
@@ -101,28 +102,53 @@ void ANPC_new::StartExploreAction()
             break;
         }
     }
+    // 如果被卡死就强制执行上一步的反动作
+    bool bUseForcedCandidate = false;
+    FExploreMoveCandidate ForcedCandidate;
     if (!bHasLegalMoveCandidate)
     {
-        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate; using Idle"), *GetActorLabel());
+        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate; using opposite of last action"), *GetActorLabel());
         UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
         if (GEngine)
         {
             GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, ErrorMessage);
         }
+
+        const ENPCExploreMoveAction OppositeAction = GetOppositeMoveAction(LastNonIdleExploreMoveAction);
+        if (OppositeAction != ENPCExploreMoveAction::Idle)
+        {
+            ForcedCandidate.Action = OppositeAction;
+            ForcedCandidate.LandingActorLocation = GetActorLocation();
+            ForcedCandidate.LandingFootLocation = GetActorLocation();
+            bUseForcedCandidate = true;
+        }
     }
 
-    const int32 PickedIndex = SampleCandidateByVisitedSoftmax(Candidates);
-    if (!Candidates.IsValidIndex(PickedIndex))
+    // 强制执行反动作，不通过softmax
+    FExploreMoveCandidate Picked;
+    if (bUseForcedCandidate)
     {
-        return;
+        Picked = ForcedCandidate;
     }
-
-    const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
+    else
+    {
+        const int32 PickedIndex = SampleCandidateByVisitedSoftmax(Candidates);
+        if (!Candidates.IsValidIndex(PickedIndex))
+        {
+            return;
+        }
+        Picked = Candidates[PickedIndex];
+    }
     bIsExecutingExploreAction = true;
     CurrentExploreMoveAction = Picked.Action;
     CurrentExploreMoveTarget = Picked.LandingActorLocation;
     CurrentExploreActionElapsed = 0.0f;
     GetMoveActionSignals(Picked.Action, CurrentRecorderWS, CurrentRecorderAD);
+    // 记住上一帧动作
+    if (Picked.Action != ENPCExploreMoveAction::Idle)
+    {
+        LastNonIdleExploreMoveAction = Picked.Action;
+    }
 
     const USpringArmComponent* CameraBoomComp = GetCameraBoom();
     StartCameraWorldRotation = CameraBoomComp ? CameraBoomComp->GetComponentRotation() : FRotator(CameraBoomPitch, 0.0f, 0.0f);
@@ -348,6 +374,31 @@ void ANPC_new::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, 
     }
 }
 
+ENPCExploreMoveAction ANPC_new::GetOppositeMoveAction(ENPCExploreMoveAction Action) const
+{
+    switch (Action)
+    {
+    case ENPCExploreMoveAction::W:
+        return ENPCExploreMoveAction::S;
+    case ENPCExploreMoveAction::S:
+        return ENPCExploreMoveAction::W;
+    case ENPCExploreMoveAction::A:
+        return ENPCExploreMoveAction::D;
+    case ENPCExploreMoveAction::D:
+        return ENPCExploreMoveAction::A;
+    case ENPCExploreMoveAction::WA:
+        return ENPCExploreMoveAction::SD;
+    case ENPCExploreMoveAction::WD:
+        return ENPCExploreMoveAction::SA;
+    case ENPCExploreMoveAction::SA:
+        return ENPCExploreMoveAction::WD;
+    case ENPCExploreMoveAction::SD:
+        return ENPCExploreMoveAction::WA;
+    default:
+        return ENPCExploreMoveAction::Idle;
+    }
+}
+
 bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
 {
     UWorld* World = GetWorld();
@@ -543,7 +594,7 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
 ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
     const float CameraPitchCenter = -15.0f;
-    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -45.0f, 15.0f);
+    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 0.0f);
     const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
 
     UpdatePitchOffsetHoldState(CurrentPitchOffset);

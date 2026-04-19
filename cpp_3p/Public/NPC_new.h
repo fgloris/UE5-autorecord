@@ -105,6 +105,7 @@ private:
 	bool IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	bool GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const;
 	void GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
+	ENPCExploreMoveAction GetOppositeMoveAction(ENPCExploreMoveAction Action) const;
 	float GetVisitedScoreAtLocation(const FVector& WorldLocation) const;
 	int32 SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const;
 
@@ -119,6 +120,7 @@ private:
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
 
 	ENPCExploreMoveAction CurrentExploreMoveAction = ENPCExploreMoveAction::Idle;
+	ENPCExploreMoveAction LastNonIdleExploreMoveAction = ENPCExploreMoveAction::Idle;
 	float CurrentExploreActionElapsed = 0.0f;
 
 	bool bHasDesiredCameraWorldRotation = false;
