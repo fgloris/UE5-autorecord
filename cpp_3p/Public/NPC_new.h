@@ -68,6 +68,7 @@ protected:
 		FVector WorldDirection = FVector::ZeroVector;
 		FVector LandingFootLocation = FVector::ZeroVector;
 		FVector LandingActorLocation = FVector::ZeroVector;
+		float VisitedScore = 0.0f;
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
@@ -94,6 +95,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore")
 	bool bDebugDrawExploreCandidates;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Navigation|Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	float VisitedSoftmaxTemperature;
+
 private:
 	void StartExploreAction();
 	void ExecuteExploreAction(float DeltaTime);
@@ -103,6 +107,8 @@ private:
 	bool IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	bool GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const;
 	void GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
+	float GetVisitedScoreAtLocation(const FVector& WorldLocation) const;
+	int32 SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const;
 
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
 	ENPCExploreCameraAction ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation);

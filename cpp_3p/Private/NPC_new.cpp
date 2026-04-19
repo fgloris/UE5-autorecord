@@ -23,6 +23,7 @@ ANPC_new::ANPC_new()
 
     bUpdateVisitedBeforeSampling = true;
     bDebugDrawExploreCandidates = false;
+    VisitedSoftmaxTemperature = 25.0f;
 }
 
 void ANPC_new::BeginPlay()
@@ -90,7 +91,13 @@ void ANPC_new::StartExploreAction()
         return;
     }
 
-    const FExploreMoveCandidate& Picked = Candidates[FMath::RandRange(0, Candidates.Num() - 1)];
+    const int32 PickedIndex = SampleCandidateByVisitedSoftmax(Candidates);
+    if (!Candidates.IsValidIndex(PickedIndex))
+    {
+        return;
+    }
+
+    const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
     bIsExecutingExploreAction = true;
     CurrentExploreMoveAction = Picked.Action;
     CurrentExploreMoveTarget = Picked.LandingActorLocation;
@@ -370,14 +377,80 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     OutCandidate.WorldDirection = Dir2D;
     OutCandidate.LandingFootLocation = LandingFootLocation;
     OutCandidate.LandingActorLocation = LandingActorLocation;
+    OutCandidate.VisitedScore = GetVisitedScoreAtLocation(LandingFootLocation);
 
     if (bDebugDrawExploreCandidates)
     {
-        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, FColor::Green, false, 0.2f);
-        DrawDebugLine(World, StartActorLocation, LandingActorLocation, FColor::Green, false, 0.2f, 0, 1.5f);
+        const float ColorScalar = FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitedScore), 0.0f, 1.0f);
+        const FColor Color = FColor::MakeRedToGreenColorFromScalar(ColorScalar);
+        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, 0.2f);
+        DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, 0.2f, 0, 1.5f);
     }
 
     return true;
+}
+
+float ANPC_new::GetVisitedScoreAtLocation(const FVector& WorldLocation) const
+{
+    const int32 GridX = FMath::RoundToInt(WorldLocation.X / GridSize);
+    const int32 GridY = FMath::RoundToInt(WorldLocation.Y / GridSize);
+    const FString GridKey = FString::Printf(TEXT("%d_%d"), GridX, GridY);
+
+    if (const float* FoundScore = Visited.Find(GridKey))
+    {
+        return *FoundScore;
+    }
+
+    return 0.0f;
+}
+
+int32 ANPC_new::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const
+{
+    if (Candidates.Num() <= 0)
+    {
+        return INDEX_NONE;
+    }
+
+    constexpr float VisitedScoreEpsilon = 0.01f;
+
+    TArray<float> Preferences;
+    Preferences.Reserve(Candidates.Num());
+
+    const float Temperature = FMath::Max(VisitedSoftmaxTemperature, KINDA_SMALL_NUMBER);
+    float MaxPreference = TNumericLimits<float>::Lowest();
+    for (const FExploreMoveCandidate& Candidate : Candidates)
+    {
+        const float Preference = (1.0f / FMath::Max(Candidate.VisitedScore + VisitedScoreEpsilon, VisitedScoreEpsilon)) / Temperature;
+        Preferences.Add(Preference);
+        MaxPreference = FMath::Max(MaxPreference, Preference);
+    }
+
+    float TotalWeight = 0.0f;
+    TArray<float> Weights;
+    Weights.Reserve(Candidates.Num());
+    for (float Preference : Preferences)
+    {
+        const float Weight = FMath::Exp(Preference - MaxPreference);
+        Weights.Add(Weight);
+        TotalWeight += Weight;
+    }
+
+    if (TotalWeight <= KINDA_SMALL_NUMBER)
+    {
+        return FMath::RandRange(0, Candidates.Num() - 1);
+    }
+
+    float RandomValue = FMath::FRandRange(0.0f, TotalWeight);
+    for (int32 Index = 0; Index < Weights.Num(); ++Index)
+    {
+        RandomValue -= Weights[Index];
+        if (RandomValue <= 0.0f)
+        {
+            return Index;
+        }
+    }
+
+    return Candidates.Num() - 1;
 }
 
 bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
