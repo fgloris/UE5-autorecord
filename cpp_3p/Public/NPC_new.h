@@ -10,6 +10,7 @@ class UCharacterMovementComponent;
 UENUM()
 enum class ENPCExploreMoveAction : uint8
 {
+	Idle,
 	W,
 	S,
 	A,
@@ -64,7 +65,7 @@ protected:
 
 	struct FExploreMoveCandidate
 	{
-		ENPCExploreMoveAction Action = ENPCExploreMoveAction::W;
+		ENPCExploreMoveAction Action = ENPCExploreMoveAction::Idle;
 		FVector WorldDirection = FVector::ZeroVector;
 		FVector LandingFootLocation = FVector::ZeroVector;
 		FVector LandingActorLocation = FVector::ZeroVector;
@@ -117,7 +118,7 @@ private:
 	bool bIsExecutingExploreAction = false;
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
 
-	ENPCExploreMoveAction CurrentExploreMoveAction = ENPCExploreMoveAction::W;
+	ENPCExploreMoveAction CurrentExploreMoveAction = ENPCExploreMoveAction::Idle;
 	float CurrentExploreActionElapsed = 0.0f;
 
 	bool bHasDesiredCameraWorldRotation = false;

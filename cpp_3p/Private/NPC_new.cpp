@@ -55,7 +55,7 @@ void ANPC_new::ClearExploreMoveTarget()
 {
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
-    CurrentExploreMoveAction = ENPCExploreMoveAction::W;
+    CurrentExploreMoveAction = ENPCExploreMoveAction::Idle;
     CurrentExploreActionElapsed = 0.0f;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPCExploreCameraAction::None;
@@ -90,6 +90,25 @@ void ANPC_new::StartExploreAction()
             GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, ErrorMessage);
         }
         return;
+    }
+
+    bool bHasLegalMoveCandidate = false;
+    for (const FExploreMoveCandidate& Candidate : Candidates)
+    {
+        if (Candidate.Action != ENPCExploreMoveAction::Idle)
+        {
+            bHasLegalMoveCandidate = true;
+            break;
+        }
+    }
+    if (!bHasLegalMoveCandidate)
+    {
+        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate; using Idle"), *GetActorLabel());
+        UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Red, ErrorMessage);
+        }
     }
 
     const int32 PickedIndex = SampleCandidateByVisitedSoftmax(Candidates);
@@ -139,22 +158,25 @@ void ANPC_new::ExecuteExploreAction(float DeltaTime)
         CameraBoomComp->SetWorldRotation(FQuat::Slerp(StartCameraWorldRotation.Quaternion(), DesiredCameraWorldRotation.Quaternion(), Alpha).Rotator());
     }
 
-    FVector FrameMoveDirection = FVector::ZeroVector;
-    if (!GetWorldDirectionForAction(CurrentExploreMoveAction, FrameMoveDirection))
+    if (CurrentExploreMoveAction != ENPCExploreMoveAction::Idle)
     {
-        ClearExploreMoveTarget();
-        return;
+        FVector FrameMoveDirection = FVector::ZeroVector;
+        if (!GetWorldDirectionForAction(CurrentExploreMoveAction, FrameMoveDirection))
+        {
+            ClearExploreMoveTarget();
+            return;
+        }
+        FrameMoveDirection = FrameMoveDirection.GetSafeNormal2D();
+
+        MoveComp->SetMovementMode(MOVE_Walking);
+        const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
+        AddMovementInput(FrameMoveDirection, InputScale);
+
+        FRotator DesiredActorRot = FrameMoveDirection.Rotation();
+        DesiredActorRot.Pitch = 0.0f;
+        DesiredActorRot.Roll = 0.0f;
+        SetActorRotation(FQuat::Slerp(GetActorRotation().Quaternion(), DesiredActorRot.Quaternion(), Alpha).Rotator());
     }
-    FrameMoveDirection = FrameMoveDirection.GetSafeNormal2D();
-
-    MoveComp->SetMovementMode(MOVE_Walking);
-    const float InputScale = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
-    AddMovementInput(FrameMoveDirection, InputScale);
-
-    FRotator DesiredActorRot = FrameMoveDirection.Rotation();
-    DesiredActorRot.Pitch = 0.0f;
-    DesiredActorRot.Roll = 0.0f;
-    SetActorRotation(FQuat::Slerp(GetActorRotation().Quaternion(), DesiredActorRot.Quaternion(), Alpha).Rotator());
 
     if (CurrentExploreActionElapsed >= Duration)
     {
@@ -174,8 +196,9 @@ void ANPC_new::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCand
 {
     OutCandidates.Reset();
 
-    const ENPCExploreMoveAction AllActions[8] =
+    const ENPCExploreMoveAction AllActions[9] =
     {
+        ENPCExploreMoveAction::Idle,
         ENPCExploreMoveAction::W,
         ENPCExploreMoveAction::A,
         ENPCExploreMoveAction::S,
@@ -198,6 +221,20 @@ void ANPC_new::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCand
 
 bool ANPC_new::TryBuildActionCandidate(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const
 {
+    if (Action == ENPCExploreMoveAction::Idle)
+    {
+        const FVector ActorLocation = GetActorLocation();
+        const UCapsuleComponent* Capsule = GetCapsuleComponent();
+        const float CapsuleHalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.0f;
+
+        OutCandidate.Action = Action;
+        OutCandidate.WorldDirection = FVector::ZeroVector;
+        OutCandidate.LandingActorLocation = ActorLocation;
+        OutCandidate.LandingFootLocation = ActorLocation - FVector(0.0f, 0.0f, CapsuleHalfHeight);
+        OutCandidate.VisitedScore = GetVisitedScoreAtLocation(OutCandidate.LandingFootLocation);
+        return true;
+    }
+
     FVector DesiredWorldDirection = FVector::ZeroVector;
     if (!GetWorldDirectionForAction(Action, DesiredWorldDirection))
     {
@@ -347,6 +384,8 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     const FVector DesiredFootLocation = StartFootLocation + Dir2D * ProbeStepDistance;
 
     FNavLocation ProjectedLocation;
+
+    // NavMesh 投影检查
     const FVector QueryExtent(GridSize * 0.5f, GridSize * 0.5f, 200.0f);
     if (!NavSys->ProjectPointToNavigation(DesiredFootLocation, ProjectedLocation, QueryExtent))
     {
@@ -354,26 +393,31 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     }
 
     const FVector LandingFootLocation = ProjectedLocation.Location;
+
+    // 落点不能太接近起点
     if (FVector::Dist2D(StartFootLocation, LandingFootLocation) < 10.0f)
     {
         return false;
     }
 
-    if (FMath::Abs(LandingFootLocation.Z - StartFootLocation.Z) > MaxStepHeight)
-    {
-        return false;
-    }
+    // // 高度差限制
+    // if (FMath::Abs(LandingFootLocation.Z - StartFootLocation.Z) > MaxStepHeight)
+    // {
+    //     return false;
+    // }
 
+    // 落点胶囊碰撞检查
     if (!IsLocationValidForNPC(LandingFootLocation))
     {
         return false;
     }
 
+    // 路径碰撞检查
     const FVector LandingActorLocation = LandingFootLocation + FVector(0.0f, 0.0f, CapsuleHalfHeight);
-    if (!IsMovePathCollisionFree(StartActorLocation, LandingActorLocation))
-    {
-        return false;
-    }
+    //if (!IsMovePathCollisionFree(StartActorLocation, LandingActorLocation))
+    //{
+    //    return false;
+    //}
 
     OutCandidate.WorldDirection = Dir2D;
     OutCandidate.LandingFootLocation = LandingFootLocation;

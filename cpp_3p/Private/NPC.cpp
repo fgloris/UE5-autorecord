@@ -65,7 +65,7 @@ bool ANPC::IsLocationValidForNPC(const FVector& Position) const
 
 	const float CapsuleRadius = Capsule->GetScaledCapsuleRadius();
 	const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-	const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
+	const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius - 5, CapsuleHalfHeight - 5);
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(NPCCapsuleOverlap), false, this);
 	Params.AddIgnoredActor(this);
