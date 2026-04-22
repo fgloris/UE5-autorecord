@@ -15,14 +15,13 @@ ANPC_new::ANPC_new()
 
     ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 30.0f;
-    CameraPitchStepDegrees = 15.0f;
+    CameraYawStepDegrees = 10.0f;
+    CameraPitchStepDegrees = 10.0f;
     MaxCameraPitchOffsetActionCount = 1;
-    CameraPitchHoldToleranceDegrees = 1.0f;
+    CameraPitchHoldToleranceDegrees = 0.1f;
 
-    bUpdateVisitedBeforeSampling = true;
     bDebugDrawExploreCandidates = false;
-    VisitedSoftmaxTemperature = 25.0f;
+    VisitedSoftmaxTemperature = 0.01f;
 }
 
 void ANPC_new::BeginPlay()
@@ -73,10 +72,7 @@ void ANPC_new::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int3
 
 void ANPC_new::StartExploreAction()
 {
-    if (bUpdateVisitedBeforeSampling)
-    {
-        UpdateVisitedStatsAtCurrentPosition();
-    }
+    UpdateVisitedStatsAtCurrentPosition();
 
     TArray<FExploreMoveCandidate> Candidates;
     BuildLegalActionCandidates(Candidates);
@@ -213,7 +209,6 @@ void ANPC_new::ExecuteExploreAction(float DeltaTime)
         }
 
         ClearExploreMoveTarget();
-        UpdateVisitedStatsAtCurrentPosition();
         OnExploreMoveTargetReached(ReachedLocation);
     }
 }

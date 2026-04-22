@@ -88,9 +88,6 @@ protected:
 	float CameraPitchHoldToleranceDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
-	bool bUpdateVisitedBeforeSampling;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	bool bDebugDrawExploreCandidates;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
