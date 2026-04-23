@@ -83,6 +83,16 @@ public:
 	FString GetDefaultSavePath(ANPC* NPC) const;
 
 	/**
+	 * Append the skeletal mesh currently bound on the NPC instance to a JSON file.
+	 * This is a one-shot helper and does not depend on recorder state.
+	 * @param NPC NPC instance, including Blueprint subclasses with mesh assets assigned in Blueprint.
+	 * @param SavePath Save path. If empty, Saved/Recordings/NPCMeshRecords.json is used.
+	 * @return Whether the record was appended successfully.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Recording|Mesh")
+	static bool AppendCurrentSkeletalMeshNameToJson(ANPC* NPC, const FString& SaveName = TEXT("skeletal_mesh_records.json"));
+
+	/**
 	 * 获取当前记录数据（只读）
 	 * @return 当前记录数据的常量引用
 	 */

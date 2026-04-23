@@ -4,6 +4,7 @@
 #include "NPC.h"  // 需要完整定义以访问FNPCNavigationState
 #include "NPC_new.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
@@ -11,6 +12,8 @@
 #include "Misc/DateTime.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Engine/SkeletalMesh.h"
+#include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -95,6 +98,118 @@ FString UNPCMovementRecorder::GetDefaultSavePath(ANPC* NPC) const
 	FString FileName = FString::Printf(TEXT("Recording_of_%s_at_%s.json"), *NPCName, *TimeStamp);
 
 	return FPaths::Combine(SaveDir, FileName);
+}
+
+bool UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson(ANPC* NPC, const FString& SaveName)
+{	
+	FString SavePath = FPaths::Combine(FPaths::ProjectDir(), TEXT("Saved"), TEXT("Recordings"), SaveName);
+	if (!NPC)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - NPC is null"));
+		return false;
+	}
+
+	USkeletalMeshComponent* BoundMeshComponent = nullptr;
+	USkeletalMesh* BoundSkeletalMesh = nullptr;
+
+	auto TryUseMeshComponent = [&BoundMeshComponent, &BoundSkeletalMesh](USkeletalMeshComponent* MeshComponent) -> bool
+	{
+		if (!MeshComponent)
+		{
+			return false;
+		}
+
+		USkeletalMesh* SkeletalMesh = MeshComponent->GetSkeletalMeshAsset();
+		if (!SkeletalMesh)
+		{
+			return false;
+		}
+
+		BoundMeshComponent = MeshComponent;
+		BoundSkeletalMesh = SkeletalMesh;
+		return true;
+	};
+
+	// Blueprint child classes can assign the inherited Character mesh or add another skeletal mesh component.
+	TryUseMeshComponent(NPC->GetMesh());
+	if (!BoundSkeletalMesh)
+	{
+		TArray<USkeletalMeshComponent*> MeshComponents;
+		NPC->GetComponents<USkeletalMeshComponent>(MeshComponents);
+		for (USkeletalMeshComponent* MeshComponent : MeshComponents)
+		{
+			if (TryUseMeshComponent(MeshComponent))
+			{
+				break;
+			}
+		}
+	}
+
+	if (!BoundSkeletalMesh || !BoundMeshComponent)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - No bound skeletal mesh found on NPC: %s"), *NPC->GetName());
+		return false;
+	}
+
+	FString ExistingJson;
+	TSharedPtr<FJsonObject> RootObject = MakeShareable(new FJsonObject);
+	if (FPaths::FileExists(SavePath) && FFileHelper::LoadFileToString(ExistingJson, *SavePath) && !ExistingJson.IsEmpty())
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ExistingJson);
+		TSharedPtr<FJsonObject> ExistingRootObject;
+		if (FJsonSerializer::Deserialize(Reader, ExistingRootObject) && ExistingRootObject.IsValid())
+		{
+			RootObject = ExistingRootObject;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - Existing JSON is invalid, recreating: %s"), *SavePath);
+		}
+	}
+
+	TArray<TSharedPtr<FJsonValue>> Records;
+	const TArray<TSharedPtr<FJsonValue>>* ExistingRecords = nullptr;
+	if (RootObject->TryGetArrayField(TEXT("records"), ExistingRecords) && ExistingRecords)
+	{
+		Records = *ExistingRecords;
+	}
+
+	TSharedPtr<FJsonObject> RecordObject = MakeShareable(new FJsonObject);
+	RecordObject->SetStringField(TEXT("time"), FDateTime::Now().ToIso8601());
+	RecordObject->SetStringField(TEXT("npc_name"), NPC->GetActorLabel());
+	RecordObject->SetStringField(TEXT("npc_object_name"), NPC->GetName());
+	RecordObject->SetStringField(TEXT("npc_class"), NPC->GetClass() ? NPC->GetClass()->GetName() : TEXT(""));
+	RecordObject->SetStringField(TEXT("skeletal_mesh_component_name"), BoundMeshComponent->GetName());
+	RecordObject->SetStringField(TEXT("skeletal_mesh_name"), BoundSkeletalMesh->GetName());
+	RecordObject->SetStringField(TEXT("skeletal_mesh_path"), BoundSkeletalMesh->GetPathName());
+	Records.Add(MakeShareable(new FJsonValueObject(RecordObject)));
+
+	RootObject->SetArrayField(TEXT("records"), Records);
+
+	FString OutputString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+	if (!FJsonSerializer::Serialize(RootObject.ToSharedRef(), Writer))
+	{
+		UE_LOG(LogTemp, Error, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - Failed to serialize JSON"));
+		return false;
+	}
+
+	const FString DirectoryPath = FPaths::GetPath(SavePath);
+	if (!FPaths::DirectoryExists(DirectoryPath))
+	{
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		PlatformFile.CreateDirectoryTree(*DirectoryPath);
+	}
+
+	if (!FFileHelper::SaveStringToFile(OutputString, *SavePath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - Failed to save: %s"), *SavePath);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("UNPCMovementRecorder::AppendCurrentSkeletalMeshNameToJson - Appended mesh '%s' for NPC '%s' to: %s"),
+		*BoundSkeletalMesh->GetName(), *NPC->GetActorLabel(), *SavePath);
+	return true;
 }
 
 // ==================== 事件记录系统 ====================
