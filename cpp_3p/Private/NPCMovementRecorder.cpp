@@ -2,7 +2,6 @@
 
 #include "NPCMovementRecorder.h"
 #include "NPC.h"  // 需要完整定义以访问FNPCNavigationState
-#include "NPC_new.h"
 #include "NPC_3p.h"
 #include "NPC_1p.h"
 #include "Camera/CameraComponent.h"
@@ -270,13 +269,12 @@ void UNPCMovementRecorder::RecordFrameFromNPC(ANPC* NPC, const TArray<FNPCNaviga
 	FrameData.ud = 0; // ud始终为0
 	FrameData.lr = 0;
 
-	// NPC_new is kept for compatibility. NPC_3p derives from NPC_new, so this path
-	// records both old third-person NPCs and the new explicit NPC_3p class.
-	if (const ANPC_new* NPCNew = Cast<ANPC_new>(NPC))
+	// Explicit third-person explorer after migration.
+	if (const ANPC_3p* NPC3p = Cast<ANPC_3p>(NPC))
 	{
 		if (bIsActuallyMoving)
 		{
-			NPCNew->GetCurrentRecorderControlSignals(FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud);
+			NPC3p->GetCurrentRecorderControlSignals(FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud);
 		}
 
 		RecordingData.AddFrame(FrameData);

@@ -45,10 +45,9 @@ void ANPC_1p::BeginPlay()
         CameraBoom->TargetArmLength = CameraBoomLength;
         CameraBoom->bDoCollisionTest = false;
         CameraBoom->SetRelativeLocation(FirstPersonCameraRelativeLocation);
-        CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f));
+        CameraBoom->SetAbsolute(false, false, false);
+        SetCameraBoomYawRelativePitchWorld(CameraBoom, FRotator(CameraBoomPitch, 0.0f, 0.0f));
     }
-
-    SyncActorYawToCameraYaw();
 }
 
 void ANPC_1p::ExecuteNextStep(float DeltaTime)
@@ -81,8 +80,8 @@ void ANPC_1p::ClearExploreMoveTarget()
     CurrentExploreActionElapsed = 0.0f;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
-    StartCameraWorldRotation = FRotator::ZeroRotator;
-    DesiredCameraWorldRotation = FRotator::ZeroRotator;
+    StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
+    DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
 }
 
 void ANPC_1p::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const
@@ -127,8 +126,8 @@ void ANPC_1p::StartExploreAction()
     GetMoveActionSignals(Picked.Action, CurrentRecorderWS, CurrentRecorderAD);
 
     const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    StartCameraWorldRotation = CameraBoomComp ? CameraBoomComp->GetComponentRotation() : FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
-    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraWorldRotation, DesiredCameraWorldRotation);
+    StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, 0.0f, 0.0f);
+    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
     GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
     bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
 }
@@ -157,17 +156,25 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (CameraBoomComp && bHasDesiredCameraWorldRotation)
     {
-        CameraBoomComp->SetWorldRotation(FQuat::Slerp(StartCameraWorldRotation.Quaternion(), DesiredCameraWorldRotation.Quaternion(), Alpha).Rotator());
+        const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), Alpha).Rotator();
+        SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
     }
 
-    SyncActorYawToCameraYaw();
 
     const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
 
     if (CurrentExploreMoveAction == ENPC1PExploreMoveAction::W)
     {
         MoveComp->SetMovementMode(MOVE_Walking);
-        AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), InputScaleByFrame);
+
+        // Execute the sampled legal landing explicitly. In this project the Blueprint calls
+        // ExecuteNextStep from Event Tick, which can run in an order where AddMovementInput
+        // is consumed too late/too weakly and the NPC appears to only pace/rotate.  The
+        // landing itself has already passed the inherited NavMesh + capsule checks, so we
+        // sweep toward that target directly while still reusing the same collision setup.
+        const FVector DesiredLocation = FMath::Lerp(StartExploreActorLocation, CurrentExploreMoveTarget, Alpha);
+        FHitResult Hit;
+        SetActorLocation(DesiredLocation, true, &Hit);
     }
     else if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
     {
@@ -181,10 +188,9 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     {
         if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
-            CameraBoomComp->SetWorldRotation(DesiredCameraWorldRotation);
+            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
         }
 
-        SyncActorYawToCameraYaw();
 
         if (CurrentExploreMoveAction == ENPC1PExploreMoveAction::Idle &&
             CurrentExploreCameraAction != ENPC1PExploreCameraAction::None &&
@@ -562,17 +568,34 @@ void ANPC_1p::UpdatePitchOffsetHoldState(float CurrentPitchOffset)
     }
 }
 
-void ANPC_1p::SyncActorYawToCameraYaw()
+FRotator ANPC_1p::GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const
 {
-    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
+    if (!CameraBoomComp)
+    {
+        return FRotator(CameraBoomPitch, 0.0f, 0.0f);
+    }
+
+    // Mixed convention requested by the current first-person setup:
+    // Pitch is interpreted in world space; yaw is interpreted relative to the actor.
+    const float WorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
+    const float RelativeYaw = CameraBoomComp->GetRelativeRotation().Yaw;
+    return FRotator(WorldPitch, RelativeYaw, 0.0f);
+}
+
+void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation) const
+{
     if (!CameraBoomComp)
     {
         return;
     }
 
-    FRotator DesiredActorRot = GetActorRotation();
-    DesiredActorRot.Pitch = 0.0f;
-    DesiredActorRot.Roll = 0.0f;
-    DesiredActorRot.Yaw = CameraBoomComp->GetComponentRotation().Yaw;
-    SetActorRotation(DesiredActorRot);
+    CameraBoomComp->SetAbsolute(false, false, false);
+
+    // Apply yaw as relative rotation first.  Keep relative pitch zero here; pitch is then
+    // imposed from world space below.  For normal characters actor pitch is zero, so this
+    // is also stable when the Blueprint only rotates yaw.
+    CameraBoomComp->SetRelativeRotation(FRotator(0.0f, MixedCameraRotation.Yaw, 0.0f));
+
+    const float CurrentWorldYaw = CameraBoomComp->GetComponentRotation().Yaw;
+    CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, CurrentWorldYaw, 0.0f));
 }

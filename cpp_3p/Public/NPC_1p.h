@@ -113,7 +113,8 @@ private:
 	ENPC1PExploreCameraAction MakeCameraAction(int32 LRSignal, int32 UDSignal) const;
 	void GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& OutLR, int32& OutUD) const;
 	void UpdatePitchOffsetHoldState(float CurrentPitchOffset);
-	void SyncActorYawToCameraYaw();
+	void SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation) const;
+	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
 
 private:
 	bool bIsExecutingExploreAction = false;
@@ -125,8 +126,8 @@ private:
 
 	bool bHasDesiredCameraWorldRotation = false;
 	ENPC1PExploreCameraAction CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
-	FRotator StartCameraWorldRotation = FRotator::ZeroRotator;
-	FRotator DesiredCameraWorldRotation = FRotator::ZeroRotator;
+	FRotator StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
+	FRotator DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
 
 	int32 CurrentRecorderWS = 0;
 	int32 CurrentRecorderAD = 0;
