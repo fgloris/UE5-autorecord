@@ -11,7 +11,23 @@ UENUM()
 enum class ENPC1PExploreMoveAction : uint8
 {
 	Idle,
-	W
+	W,
+	S,
+	A,
+	D,
+	WA,
+	WD,
+	SA,
+	SD
+};
+
+UENUM()
+enum class ENPC1PExplorePhase : uint8
+{
+	None,
+	IdleCamera,
+	TurnToMoveDirection,
+	WalkForward
 };
 
 UENUM()
@@ -62,6 +78,7 @@ protected:
 		FVector WorldDirection = FVector::ZeroVector;
 		FVector LandingFootLocation = FVector::ZeroVector;
 		FVector LandingActorLocation = FVector::ZeroVector;
+		float VisitedScore = 0.0f;
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
@@ -82,11 +99,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	bool bDebugDrawExploreCandidates;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	float VisitedSoftmaxTemperature;
+
 	/** Camera location for first-person sampling. Collision test stays off; only the inherited capsule/NavMesh movement checks are used. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|First Person")
 	FVector FirstPersonCameraRelativeLocation;
 
-	/** Tiny alternating movement input used only to make idle camera turns play a small in-place stepping motion. */
+	/** Seconds spent rotating in place toward the sampled movement direction before walking forward. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float TurnToMoveDirectionDuration;
+
+	/** MaxWalkSpeed multiplier used during in-place turning/pacing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0"))
+	float TurnInPlaceWalkSpeedScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float TurnYawToleranceDegrees;
+
+	/** Tiny alternating movement input used only to make idle camera turns or turn-in-place actions play a small stepping motion. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float InPlacePaceInputScale;
 
@@ -106,6 +137,9 @@ private:
 	bool IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	bool GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector& OutDirection) const;
 	void GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
+	ENPC1PExploreMoveAction GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const;
+	float GetVisitedScoreAtLocation(const FVector& WorldLocation) const;
+	int32 SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const;
 	int32 SampleRandomCandidate(const TArray<FExploreMoveCandidate>& Candidates) const;
 	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
 
@@ -115,14 +149,24 @@ private:
 	void UpdatePitchOffsetHoldState(float CurrentPitchOffset);
 	void SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation);
 	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
+	void BeginWalkCameraAction();
+	void SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD);
+	float GetExploreTurnDuration() const;
 
 private:
 	bool bIsExecutingExploreAction = false;
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
 	FVector StartExploreActorLocation = FVector::ZeroVector;
+	FVector StartExploreFootLocation = FVector::ZeroVector;
 
 	ENPC1PExploreMoveAction CurrentExploreMoveAction = ENPC1PExploreMoveAction::Idle;
+	ENPC1PExploreMoveAction LastNonIdleExploreMoveAction = ENPC1PExploreMoveAction::Idle;
+	ENPC1PExplorePhase CurrentExplorePhase = ENPC1PExplorePhase::None;
 	float CurrentExploreActionElapsed = 0.0f;
+	float OriginalMaxWalkSpeedForExploreAction = 0.0f;
+	FRotator StartTurnActorRotation = FRotator::ZeroRotator;
+	FRotator DesiredTurnActorRotation = FRotator::ZeroRotator;
+	bool bWalkCameraActionStarted = false;
 
 	bool bHasDesiredCameraWorldRotation = false;
 	ENPC1PExploreCameraAction CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;

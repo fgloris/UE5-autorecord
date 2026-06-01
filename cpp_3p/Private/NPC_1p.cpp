@@ -21,9 +21,13 @@ ANPC_1p::ANPC_1p()
     CameraPitchHoldToleranceDegrees = 0.1f;
 
     bDebugDrawExploreCandidates = false;
+    VisitedSoftmaxTemperature = 0.01f;
 
     CameraBoomLength = 0.0f;
     FirstPersonCameraRelativeLocation = FVector(0.0f, 0.0f, 60.0f);
+    TurnToMoveDirectionDuration = 0.35f;
+    TurnInPlaceWalkSpeedScale = 0.2f;
+    TurnYawToleranceDegrees = 1.0f;
     InPlacePaceInputScale = 0.12f;
     InPlacePaceCyclesPerAction = 1.0f;
     bRestoreLocationAfterInPlacePacing = true;
@@ -73,15 +77,28 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
 
 void ANPC_1p::ClearExploreMoveTarget()
 {
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
+        {
+            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction;
+        }
+    }
+
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
     StartExploreActorLocation = FVector::ZeroVector;
+    StartExploreFootLocation = FVector::ZeroVector;
     CurrentExploreMoveAction = ENPC1PExploreMoveAction::Idle;
+    CurrentExplorePhase = ENPC1PExplorePhase::None;
     CurrentExploreActionElapsed = 0.0f;
+    OriginalMaxWalkSpeedForExploreAction = 0.0f;
+    bWalkCameraActionStarted = false;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
     StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
     DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
+    SetRecorderSignals(0, 0, 0, 0);
 }
 
 void ANPC_1p::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const
@@ -110,26 +127,100 @@ void ANPC_1p::StartExploreAction()
         return;
     }
 
-    const int32 PickedIndex = SampleRandomCandidate(Candidates);
-    if (!Candidates.IsValidIndex(PickedIndex))
+    bool bHasLegalMoveCandidate = false;
+    for (const FExploreMoveCandidate& Candidate : Candidates)
     {
-        return;
+        if (Candidate.Action != ENPC1PExploreMoveAction::Idle)
+        {
+            bHasLegalMoveCandidate = true;
+            break;
+        }
     }
 
-    const FExploreMoveCandidate& Picked = Candidates[PickedIndex];
+    bool bUseForcedCandidate = false;
+    FExploreMoveCandidate ForcedCandidate;
+    if (!bHasLegalMoveCandidate)
+    {
+        const ENPC1PExploreMoveAction OppositeAction = GetOppositeMoveAction(LastNonIdleExploreMoveAction);
+        if (OppositeAction != ENPC1PExploreMoveAction::Idle)
+        {
+            ForcedCandidate.Action = OppositeAction;
+            if (GetWorldDirectionForAction(OppositeAction, ForcedCandidate.WorldDirection))
+            {
+                ForcedCandidate.LandingActorLocation = GetActorLocation();
+                ForcedCandidate.LandingFootLocation = GetActorLocation();
+                bUseForcedCandidate = true;
+            }
+        }
+    }
+
+    FExploreMoveCandidate Picked;
+    if (bUseForcedCandidate)
+    {
+        Picked = ForcedCandidate;
+    }
+    else
+    {
+        const int32 PickedIndex = SampleCandidateByVisitedSoftmax(Candidates);
+        if (!Candidates.IsValidIndex(PickedIndex))
+        {
+            return;
+        }
+        Picked = Candidates[PickedIndex];
+    }
 
     bIsExecutingExploreAction = true;
     CurrentExploreMoveAction = Picked.Action;
     CurrentExploreMoveTarget = Picked.LandingActorLocation;
     StartExploreActorLocation = GetActorLocation();
+    const UCapsuleComponent* Capsule = GetCapsuleComponent();
+    const float CapsuleHalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.0f;
+    StartExploreFootLocation = StartExploreActorLocation - FVector(0.0f, 0.0f, CapsuleHalfHeight);
     CurrentExploreActionElapsed = 0.0f;
-    GetMoveActionSignals(Picked.Action, CurrentRecorderWS, CurrentRecorderAD);
+    bWalkCameraActionStarted = false;
 
-    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, 0.0f, 0.0f);
-    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
-    GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
-    bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        OriginalMaxWalkSpeedForExploreAction = MoveComp->MaxWalkSpeed;
+    }
+
+    if (Picked.Action == ENPC1PExploreMoveAction::Idle)
+    {
+        CurrentExplorePhase = ENPC1PExplorePhase::IdleCamera;
+        const USpringArmComponent* CameraBoomComp = GetCameraBoom();
+        StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
+        CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
+        GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
+        CurrentRecorderWS = 0;
+        CurrentRecorderAD = 0;
+        bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
+    }
+    else
+    {
+        CurrentExplorePhase = ENPC1PExplorePhase::TurnToMoveDirection;
+        if (Picked.Action != ENPC1PExploreMoveAction::Idle)
+        {
+            LastNonIdleExploreMoveAction = Picked.Action;
+        }
+
+        StartTurnActorRotation = GetActorRotation();
+        DesiredTurnActorRotation = Picked.WorldDirection.GetSafeNormal2D().Rotation();
+        DesiredTurnActorRotation.Pitch = 0.0f;
+        DesiredTurnActorRotation.Roll = 0.0f;
+        bHasDesiredCameraWorldRotation = false;
+        CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
+        DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
+
+        const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
+        SetRecorderSignals(0, 0, YawDelta < 0.0f ? 1 : (YawDelta > 0.0f ? 2 : 0), 0);
+
+        if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees || GetExploreTurnDuration() <= KINDA_SMALL_NUMBER)
+        {
+            SetActorRotation(DesiredTurnActorRotation);
+            BeginWalkCameraAction();
+            CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
+        }
+    }
 }
 
 void ANPC_1p::ExecuteExploreAction(float DeltaTime)
@@ -139,12 +230,15 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         return;
     }
 
-    const float Duration = FMath::Max(ExploreActionDuration, KINDA_SMALL_NUMBER);
+    const bool bIsIdleAction = CurrentExploreMoveAction == ENPC1PExploreMoveAction::Idle;
+    const float TurnDuration = bIsIdleAction ? 0.0f : GetExploreTurnDuration();
+    const float WalkDuration = FMath::Max(ExploreActionDuration, KINDA_SMALL_NUMBER);
+    const float TotalDuration = bIsIdleAction ? WalkDuration : (TurnDuration + WalkDuration);
+
     const float PreviousElapsed = CurrentExploreActionElapsed;
-    const float RemainingTime = FMath::Max(Duration - PreviousElapsed, 0.0f);
+    const float RemainingTime = FMath::Max(TotalDuration - PreviousElapsed, 0.0f);
     const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
-    CurrentExploreActionElapsed = FMath::Min(PreviousElapsed + EffectiveDeltaTime, Duration);
-    const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / Duration, 0.0f, 1.0f);
+    CurrentExploreActionElapsed = FMath::Min(PreviousElapsed + EffectiveDeltaTime, TotalDuration);
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     if (!MoveComp)
@@ -154,45 +248,86 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     }
 
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-    {
-        const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), Alpha).Rotator();
-        SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
-    }
-
-
     const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
 
-    if (CurrentExploreMoveAction == ENPC1PExploreMoveAction::W)
+    if (bIsIdleAction)
     {
-        FVector FrameMoveDirection = FVector::ZeroVector;
-        if (!GetWorldDirectionForAction(CurrentExploreMoveAction, FrameMoveDirection))
+        const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
+        if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
-            ClearExploreMoveTarget();
-            return;
+            const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), Alpha).Rotator();
+            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
         }
-        FrameMoveDirection = FrameMoveDirection.GetSafeNormal2D();
 
-        MoveComp->SetMovementMode(MOVE_Walking);
-        AddMovementInput(FrameMoveDirection, InputScaleByFrame);
+        if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
+        {
+            MoveComp->SetMovementMode(MOVE_Walking);
+            if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
+            {
+                MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction * FMath::Clamp(TurnInPlaceWalkSpeedScale, 0.0f, 1.0f);
+            }
+            const float PacePhase = Alpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
+            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
+            AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
+        }
     }
-    else if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
+    else if (CurrentExploreActionElapsed < TurnDuration)
     {
+        const float TurnAlpha = FMath::Clamp(CurrentExploreActionElapsed / FMath::Max(TurnDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+        const FRotator MixedActorRotation = FQuat::Slerp(StartTurnActorRotation.Quaternion(), DesiredTurnActorRotation.Quaternion(), TurnAlpha).Rotator();
+        SetActorRotation(FRotator(0.0f, MixedActorRotation.Yaw, 0.0f));
+
         MoveComp->SetMovementMode(MOVE_Walking);
-        const float PacePhase = Alpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
-        const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
-        AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
+        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
+        {
+            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction * FMath::Clamp(TurnInPlaceWalkSpeedScale, 0.0f, 1.0f);
+        }
+
+        const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, DesiredTurnActorRotation.Yaw);
+        SetRecorderSignals(0, 0, YawDeltaRemaining < 0.0f ? 1 : (YawDeltaRemaining > 0.0f ? 2 : 0), 0);
+
+        if (InPlacePaceInputScale > KINDA_SMALL_NUMBER)
+        {
+            const float PacePhase = TurnAlpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
+            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
+            AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
+        }
+    }
+    else
+    {
+        if (CurrentExplorePhase != ENPC1PExplorePhase::WalkForward)
+        {
+            SetActorRotation(DesiredTurnActorRotation);
+            BeginWalkCameraAction();
+            CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
+        }
+
+        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
+        {
+            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction;
+        }
+
+        const float WalkElapsed = CurrentExploreActionElapsed - TurnDuration;
+        const float WalkAlpha = FMath::Clamp(WalkElapsed / WalkDuration, 0.0f, 1.0f);
+
+        if (CameraBoomComp && bHasDesiredCameraWorldRotation)
+        {
+            const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), WalkAlpha).Rotator();
+            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
+        }
+
+        MoveComp->SetMovementMode(MOVE_Walking);
+        AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), InputScaleByFrame);
     }
 
-    if (CurrentExploreActionElapsed >= Duration)
+    if (CurrentExploreActionElapsed >= TotalDuration)
     {
         if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
             SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
         }
 
-
-        if (CurrentExploreMoveAction == ENPC1PExploreMoveAction::Idle &&
+        if (bIsIdleAction &&
             CurrentExploreCameraAction != ENPC1PExploreCameraAction::None &&
             bRestoreLocationAfterInPlacePacing)
         {
@@ -209,10 +344,17 @@ void ANPC_1p::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCandi
 {
     OutCandidates.Reset();
 
-    const ENPC1PExploreMoveAction AllActions[2] =
+    const ENPC1PExploreMoveAction AllActions[9] =
     {
         ENPC1PExploreMoveAction::Idle,
-        ENPC1PExploreMoveAction::W
+        ENPC1PExploreMoveAction::W,
+        ENPC1PExploreMoveAction::A,
+        ENPC1PExploreMoveAction::S,
+        ENPC1PExploreMoveAction::D,
+        ENPC1PExploreMoveAction::WA,
+        ENPC1PExploreMoveAction::WD,
+        ENPC1PExploreMoveAction::SA,
+        ENPC1PExploreMoveAction::SD
     };
 
     for (ENPC1PExploreMoveAction Action : AllActions)
@@ -237,6 +379,7 @@ bool ANPC_1p::TryBuildActionCandidate(ENPC1PExploreMoveAction Action, FExploreMo
         OutCandidate.WorldDirection = FVector::ZeroVector;
         OutCandidate.LandingActorLocation = ActorLocation;
         OutCandidate.LandingFootLocation = ActorLocation - FVector(0.0f, 0.0f, CapsuleHalfHeight);
+        OutCandidate.VisitedScore = GetVisitedScoreAtLocation(OutCandidate.LandingFootLocation);
         return true;
     }
 
@@ -257,16 +400,49 @@ bool ANPC_1p::TryBuildActionCandidate(ENPC1PExploreMoveAction Action, FExploreMo
 
 bool ANPC_1p::GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector& OutDirection) const
 {
-    if (Action != ENPC1PExploreMoveAction::W)
+    FVector ActorForward = GetActorForwardVector().GetSafeNormal2D();
+    if (ActorForward.IsNearlyZero())
     {
-        OutDirection = FVector::ZeroVector;
-        return false;
+        ActorForward = FVector::ForwardVector;
     }
 
-    // In first-person mode LR turns the actor itself.  The spring arm keeps zero
-    // relative yaw and naturally follows the actor, so forward movement should use
-    // the actor forward vector, matching CharacterMovement's normal walking logic.
-    OutDirection = GetActorForwardVector().GetSafeNormal2D();
+    FVector ActorRight = GetActorRightVector().GetSafeNormal2D();
+    if (ActorRight.IsNearlyZero())
+    {
+        ActorRight = FVector::RightVector;
+    }
+
+    switch (Action)
+    {
+    case ENPC1PExploreMoveAction::W:
+        OutDirection = ActorForward;
+        break;
+    case ENPC1PExploreMoveAction::A:
+        OutDirection = -ActorRight;
+        break;
+    case ENPC1PExploreMoveAction::S:
+        OutDirection = -ActorForward;
+        break;
+    case ENPC1PExploreMoveAction::D:
+        OutDirection = ActorRight;
+        break;
+    case ENPC1PExploreMoveAction::WA:
+        OutDirection = (ActorForward - ActorRight).GetSafeNormal();
+        break;
+    case ENPC1PExploreMoveAction::WD:
+        OutDirection = (ActorForward + ActorRight).GetSafeNormal();
+        break;
+    case ENPC1PExploreMoveAction::SA:
+        OutDirection = (-ActorForward - ActorRight).GetSafeNormal();
+        break;
+    case ENPC1PExploreMoveAction::SD:
+        OutDirection = (-ActorForward + ActorRight).GetSafeNormal();
+        break;
+    default:
+        OutDirection = FVector::ZeroVector;
+        break;
+    }
+
     return !OutDirection.IsNearlyZero();
 }
 
@@ -275,9 +451,63 @@ void ANPC_1p::GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS,
     OutWS = 0;
     OutAD = 0;
 
-    if (Action == ENPC1PExploreMoveAction::W)
+    switch (Action)
     {
+    case ENPC1PExploreMoveAction::W:
         OutWS = 1;
+        break;
+    case ENPC1PExploreMoveAction::S:
+        OutWS = 2;
+        break;
+    case ENPC1PExploreMoveAction::A:
+        OutAD = 1;
+        break;
+    case ENPC1PExploreMoveAction::D:
+        OutAD = 2;
+        break;
+    case ENPC1PExploreMoveAction::WA:
+        OutWS = 1;
+        OutAD = 1;
+        break;
+    case ENPC1PExploreMoveAction::WD:
+        OutWS = 1;
+        OutAD = 2;
+        break;
+    case ENPC1PExploreMoveAction::SA:
+        OutWS = 2;
+        OutAD = 1;
+        break;
+    case ENPC1PExploreMoveAction::SD:
+        OutWS = 2;
+        OutAD = 2;
+        break;
+    default:
+        break;
+    }
+}
+
+ENPC1PExploreMoveAction ANPC_1p::GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const
+{
+    switch (Action)
+    {
+    case ENPC1PExploreMoveAction::W:
+        return ENPC1PExploreMoveAction::S;
+    case ENPC1PExploreMoveAction::S:
+        return ENPC1PExploreMoveAction::W;
+    case ENPC1PExploreMoveAction::A:
+        return ENPC1PExploreMoveAction::D;
+    case ENPC1PExploreMoveAction::D:
+        return ENPC1PExploreMoveAction::A;
+    case ENPC1PExploreMoveAction::WA:
+        return ENPC1PExploreMoveAction::SD;
+    case ENPC1PExploreMoveAction::WD:
+        return ENPC1PExploreMoveAction::SA;
+    case ENPC1PExploreMoveAction::SA:
+        return ENPC1PExploreMoveAction::WD;
+    case ENPC1PExploreMoveAction::SD:
+        return ENPC1PExploreMoveAction::WA;
+    default:
+        return ENPC1PExploreMoveAction::Idle;
     }
 }
 
@@ -327,8 +557,6 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
     const FVector DesiredFootLocation = StartFootLocation + Dir2D * ProbeStepDistance;
 
     FNavLocation ProjectedLocation;
-
-    // NavMesh 投影检查
     const FVector QueryExtent(GridSize * 0.5f, GridSize * 0.5f, 200.0f);
     if (!NavSys->ProjectPointToNavigation(DesiredFootLocation, ProjectedLocation, QueryExtent))
     {
@@ -337,31 +565,96 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
 
     const FVector LandingFootLocation = ProjectedLocation.Location;
 
+    if (FVector::Dist2D(StartFootLocation, LandingFootLocation) < 10.0f)
+    {
+        return false;
+    }
+
     if (!IsLocationValidForNPC(LandingFootLocation))
     {
         return false;
     }
 
     const FVector LandingActorLocation = LandingFootLocation + FVector(0.0f, 0.0f, CapsuleHalfHeight);
-    // Keep the same tuning as the third-person explorer: landing capsule/NavMesh checks are authoritative.
-    // Enable this only if the third-person NPC also enables its swept path check.
-    // if (!IsMovePathCollisionFree(StartActorLocation, LandingActorLocation))
-    // {
-    //     return false;
-    // }
 
     OutCandidate.WorldDirection = Dir2D;
     OutCandidate.LandingFootLocation = LandingFootLocation;
     OutCandidate.LandingActorLocation = LandingActorLocation;
+    OutCandidate.VisitedScore = GetVisitedScoreAtLocation(LandingFootLocation);
 
     if (bDebugDrawExploreCandidates)
     {
-        const float DrawDuration = FMath::Max(ExploreActionDuration, KINDA_SMALL_NUMBER);
-        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, FColor::Green, false, DrawDuration);
-        DrawDebugLine(World, StartActorLocation, LandingActorLocation, FColor::Green, false, DrawDuration, 0, 1.5f);
+        const float ColorScalar = FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitedScore), 0.0f, 1.0f);
+        const FColor Color = FColor::MakeRedToGreenColorFromScalar(ColorScalar);
+        const float DrawDuration = FMath::Max(ExploreActionDuration + TurnToMoveDirectionDuration, KINDA_SMALL_NUMBER);
+        DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, DrawDuration);
+        DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, DrawDuration, 0, 1.5f);
     }
 
     return true;
+}
+
+float ANPC_1p::GetVisitedScoreAtLocation(const FVector& WorldLocation) const
+{
+    const int32 GridX = FMath::RoundToInt(WorldLocation.X / GridSize);
+    const int32 GridY = FMath::RoundToInt(WorldLocation.Y / GridSize);
+    const FString GridKey = FString::Printf(TEXT("%d_%d"), GridX, GridY);
+
+    if (const float* FoundScore = Visited.Find(GridKey))
+    {
+        return *FoundScore;
+    }
+
+    return 0.0f;
+}
+
+int32 ANPC_1p::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const
+{
+    if (Candidates.Num() <= 0)
+    {
+        return INDEX_NONE;
+    }
+
+    constexpr float VisitedScoreEpsilon = 0.01f;
+
+    TArray<float> Preferences;
+    Preferences.Reserve(Candidates.Num());
+
+    const float Temperature = FMath::Max(VisitedSoftmaxTemperature, KINDA_SMALL_NUMBER);
+    float MaxPreference = TNumericLimits<float>::Lowest();
+    for (const FExploreMoveCandidate& Candidate : Candidates)
+    {
+        const float Preference = (1.0f / FMath::Max(Candidate.VisitedScore + VisitedScoreEpsilon, VisitedScoreEpsilon)) / Temperature;
+        Preferences.Add(Preference);
+        MaxPreference = FMath::Max(MaxPreference, Preference);
+    }
+
+    float TotalWeight = 0.0f;
+    TArray<float> Weights;
+    Weights.Reserve(Candidates.Num());
+    for (float Preference : Preferences)
+    {
+        const float Weight = FMath::Exp(Preference - MaxPreference);
+        Weights.Add(Weight);
+        TotalWeight += Weight;
+    }
+
+    if (TotalWeight <= KINDA_SMALL_NUMBER)
+    {
+        return FMath::RandRange(0, Candidates.Num() - 1);
+    }
+
+    float RandomValue = FMath::FRandRange(0.0f, TotalWeight);
+    for (int32 Index = 0; Index < Weights.Num(); ++Index)
+    {
+        RandomValue -= Weights[Index];
+        if (RandomValue <= 0.0f)
+        {
+            return Index;
+        }
+    }
+
+    return Candidates.Num() - 1;
 }
 
 bool ANPC_1p::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
@@ -561,10 +854,6 @@ FRotator ANPC_1p::GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* 
         return FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
     }
 
-    // First-person convention:
-    // - Yaw is the actor's world yaw. LR camera actions rotate the actor directly.
-    // - The spring arm's relative yaw stays zero, so it follows the actor naturally.
-    // - Pitch is read from the spring arm's world rotation.
     const float WorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
     const float ActorWorldYaw = GetActorRotation().Yaw;
     return FRotator(WorldPitch, ActorWorldYaw, 0.0f);
@@ -579,15 +868,42 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
 
     CameraBoomComp->SetAbsolute(false, false, false);
 
-    // LR controls the character body directly.  Since the spring arm remains attached
-    // with zero relative yaw, it is carried by the actor rotation instead of turning
-    // independently.
     FRotator ActorRotation = GetActorRotation();
     ActorRotation.Yaw = MixedCameraRotation.Yaw;
+    ActorRotation.Pitch = 0.0f;
+    ActorRotation.Roll = 0.0f;
     SetActorRotation(ActorRotation);
 
-    // Keep camera yaw relative to the actor at zero.  Apply pitch in world space while
-    // preserving the actor-driven world yaw.
     CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
     CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, GetActorRotation().Yaw, 0.0f));
+}
+
+void ANPC_1p::BeginWalkCameraAction()
+{
+    if (bWalkCameraActionStarted)
+    {
+        return;
+    }
+
+    bWalkCameraActionStarted = true;
+    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
+    StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
+    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
+    GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
+    CurrentRecorderWS = 1;
+    CurrentRecorderAD = 0;
+    bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
+}
+
+void ANPC_1p::SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD)
+{
+    CurrentRecorderWS = WS;
+    CurrentRecorderAD = AD;
+    CurrentRecorderLR = LR;
+    CurrentRecorderUD = UD;
+}
+
+float ANPC_1p::GetExploreTurnDuration() const
+{
+    return FMath::Max(TurnToMoveDirectionDuration, 0.0f);
 }
