@@ -3,6 +3,8 @@
 #include "NPCMovementRecorder.h"
 #include "NPC.h"  // 需要完整定义以访问FNPCNavigationState
 #include "NPC_new.h"
+#include "NPC_3p.h"
+#include "NPC_1p.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -268,11 +270,32 @@ void UNPCMovementRecorder::RecordFrameFromNPC(ANPC* NPC, const TArray<FNPCNaviga
 	FrameData.ud = 0; // ud始终为0
 	FrameData.lr = 0;
 
+	// NPC_new is kept for compatibility. NPC_3p derives from NPC_new, so this path
+	// records both old third-person NPCs and the new explicit NPC_3p class.
 	if (const ANPC_new* NPCNew = Cast<ANPC_new>(NPC))
 	{
 		if (bIsActuallyMoving)
 		{
 			NPCNew->GetCurrentRecorderControlSignals(FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud);
+		}
+
+		RecordingData.AddFrame(FrameData);
+		this->CurrentFrame++;
+
+		if (GEngine && this->CurrentFrame % 60 == 0)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Cyan,
+				FString::Printf(TEXT("Recording: Frame=%d, Time=%.2fs, ws=%d, ad=%d, lr=%d, ud=%d"),
+					this->CurrentFrame, this->ElapsedTime, FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud));
+		}
+		return;
+	}
+
+	if (const ANPC_1p* NPC1p = Cast<ANPC_1p>(NPC))
+	{
+		if (bIsActuallyMoving)
+		{
+			NPC1p->GetCurrentRecorderControlSignals(FrameData.ws, FrameData.ad, FrameData.lr, FrameData.ud);
 		}
 
 		RecordingData.AddFrame(FrameData);
