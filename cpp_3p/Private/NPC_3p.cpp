@@ -1,4 +1,4 @@
-#include "NPC_new.h"
+#include "NPC_3p.h"
 
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -8,7 +8,7 @@
 #include "NavigationSystem.h"
 #include "NPCMovementRecorder.h"
 
-ANPC_new::ANPC_new()
+ANPC_3p::ANPC_3p()
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = true;
@@ -24,12 +24,12 @@ ANPC_new::ANPC_new()
     VisitedSoftmaxTemperature = 0.01f;
 }
 
-void ANPC_new::BeginPlay()
+void ANPC_3p::BeginPlay()
 {
     Super::BeginPlay();
 }
 
-void ANPC_new::ExecuteNextStep(float DeltaTime)
+void ANPC_3p::ExecuteNextStep(float DeltaTime)
 {
     if (!GetWorld())
     {
@@ -50,7 +50,7 @@ void ANPC_new::ExecuteNextStep(float DeltaTime)
     }
 }
 
-void ANPC_new::ClearExploreMoveTarget()
+void ANPC_3p::ClearExploreMoveTarget()
 {
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
@@ -62,7 +62,7 @@ void ANPC_new::ClearExploreMoveTarget()
     DesiredCameraWorldRotation = FRotator::ZeroRotator;
 }
 
-void ANPC_new::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const
+void ANPC_3p::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int32& OutLR, int32& OutUD) const
 {
     OutWS = CurrentRecorderWS;
     OutAD = CurrentRecorderAD;
@@ -70,7 +70,7 @@ void ANPC_new::GetCurrentRecorderControlSignals(int32& OutWS, int32& OutAD, int3
     OutUD = CurrentRecorderUD;
 }
 
-void ANPC_new::StartExploreAction()
+void ANPC_3p::StartExploreAction()
 {
     UpdateVisitedStatsAtCurrentPosition();
 
@@ -79,7 +79,7 @@ void ANPC_new::StartExploreAction()
 
     if (Candidates.Num() <= 0)
     {
-        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate"), *GetActorLabel());
+        const FString ErrorMessage = FString::Printf(TEXT("NPC_3p[%s] no legal movement candidate"), *GetActorLabel());
         UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
         if (GEngine)
         {
@@ -103,7 +103,7 @@ void ANPC_new::StartExploreAction()
     FExploreMoveCandidate ForcedCandidate;
     if (!bHasLegalMoveCandidate)
     {
-        const FString ErrorMessage = FString::Printf(TEXT("NPC_new[%s] no legal movement candidate; using opposite of last action"), *GetActorLabel());
+        const FString ErrorMessage = FString::Printf(TEXT("NPC_3p[%s] no legal movement candidate; using opposite of last action"), *GetActorLabel());
         UE_LOG(LogTemp, Error, TEXT("%s"), *ErrorMessage);
         if (GEngine)
         {
@@ -153,7 +153,7 @@ void ANPC_new::StartExploreAction()
     bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPCExploreCameraAction::None;
 }
 
-void ANPC_new::ExecuteExploreAction(float DeltaTime)
+void ANPC_3p::ExecuteExploreAction(float DeltaTime)
 {
     if (!bIsExecutingExploreAction)
     {
@@ -213,7 +213,7 @@ void ANPC_new::ExecuteExploreAction(float DeltaTime)
     }
 }
 
-void ANPC_new::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCandidates) const
+void ANPC_3p::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCandidates) const
 {
     OutCandidates.Reset();
 
@@ -240,7 +240,7 @@ void ANPC_new::BuildLegalActionCandidates(TArray<FExploreMoveCandidate>& OutCand
     }
 }
 
-bool ANPC_new::TryBuildActionCandidate(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const
+bool ANPC_3p::TryBuildActionCandidate(ENPCExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const
 {
     if (Action == ENPCExploreMoveAction::Idle)
     {
@@ -271,7 +271,7 @@ bool ANPC_new::TryBuildActionCandidate(ENPCExploreMoveAction Action, FExploreMov
     return true;
 }
 
-bool ANPC_new::GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const
+bool ANPC_3p::GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector& OutDirection) const
 {
     const USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (!CameraBoomComp)
@@ -329,7 +329,7 @@ bool ANPC_new::GetWorldDirectionForAction(ENPCExploreMoveAction Action, FVector&
     return !OutDirection.IsNearlyZero();
 }
 
-void ANPC_new::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const
+void ANPC_3p::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, int32& OutAD) const
 {
     OutWS = 0;
     OutAD = 0;
@@ -369,7 +369,7 @@ void ANPC_new::GetMoveActionSignals(ENPCExploreMoveAction Action, int32& OutWS, 
     }
 }
 
-ENPCExploreMoveAction ANPC_new::GetOppositeMoveAction(ENPCExploreMoveAction Action) const
+ENPCExploreMoveAction ANPC_3p::GetOppositeMoveAction(ENPCExploreMoveAction Action) const
 {
     switch (Action)
     {
@@ -394,7 +394,7 @@ ENPCExploreMoveAction ANPC_new::GetOppositeMoveAction(ENPCExploreMoveAction Acti
     }
 }
 
-bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
+bool ANPC_3p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
 {
     UWorld* World = GetWorld();
     if (!World)
@@ -482,7 +482,7 @@ bool ANPC_new::IsLandingValidForDirection(const FVector& DesiredWorldDirection, 
     return true;
 }
 
-float ANPC_new::GetVisitedScoreAtLocation(const FVector& WorldLocation) const
+float ANPC_3p::GetVisitedScoreAtLocation(const FVector& WorldLocation) const
 {
     const int32 GridX = FMath::RoundToInt(WorldLocation.X / GridSize);
     const int32 GridY = FMath::RoundToInt(WorldLocation.Y / GridSize);
@@ -496,7 +496,7 @@ float ANPC_new::GetVisitedScoreAtLocation(const FVector& WorldLocation) const
     return 0.0f;
 }
 
-int32 ANPC_new::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const
+int32 ANPC_3p::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const
 {
     if (Candidates.Num() <= 0)
     {
@@ -545,7 +545,7 @@ int32 ANPC_new::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandida
     return Candidates.Num() - 1;
 }
 
-bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
+bool ANPC_3p::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
 {
     UWorld* World = GetWorld();
     const UCapsuleComponent* Capsule = GetCapsuleComponent();
@@ -558,7 +558,7 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
     const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
     const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
 
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(NPCNewCapsuleOverlap), false, this);
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(NPC3pCapsuleOverlap), false, this);
     Params.AddIgnoredActor(this);
 
     const FVector Delta = EndActorLocation - StartActorLocation;
@@ -586,7 +586,7 @@ bool ANPC_new::IsMovePathCollisionFree(const FVector& StartActorLocation, const 
     return true;
 }
 
-ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
+ENPCExploreCameraAction ANPC_3p::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
     const float CameraPitchCenter = -15.0f;
     const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 0.0f);
@@ -638,7 +638,7 @@ ENPCExploreCameraAction ANPC_new::ChooseRandomCameraAction(const FRotator& Curre
     return MakeCameraAction(LRSignal, EffectiveUDSignal);
 }
 
-ENPCExploreCameraAction ANPC_new::MakeCameraAction(int32 LRSignal, int32 UDSignal) const
+ENPCExploreCameraAction ANPC_3p::MakeCameraAction(int32 LRSignal, int32 UDSignal) const
 {
     if (LRSignal == 1 && UDSignal == 1)
     {
@@ -675,7 +675,7 @@ ENPCExploreCameraAction ANPC_new::MakeCameraAction(int32 LRSignal, int32 UDSigna
     return ENPCExploreCameraAction::None;
 }
 
-void ANPC_new::GetCameraActionSignals(ENPCExploreCameraAction Action, int32& OutLR, int32& OutUD) const
+void ANPC_3p::GetCameraActionSignals(ENPCExploreCameraAction Action, int32& OutLR, int32& OutUD) const
 {
     OutLR = 0;
     OutUD = 0;
@@ -715,7 +715,7 @@ void ANPC_new::GetCameraActionSignals(ENPCExploreCameraAction Action, int32& Out
     }
 }
 
-void ANPC_new::UpdatePitchOffsetHoldState(float CurrentPitchOffset)
+void ANPC_3p::UpdatePitchOffsetHoldState(float CurrentPitchOffset)
 {
     if (FMath::Abs(CurrentPitchOffset) <= CameraPitchHoldToleranceDegrees)
     {

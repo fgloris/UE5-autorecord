@@ -98,7 +98,7 @@ struct FNPCNavigationState
 };
 
 /**
- * NPC角色基类：只保留 NPC_new 仍然需要的基础能力
+ * NPC角色基类：保留 NPC_3p 和 NPC_1p 共同复用的基础能力
  *
  * 核心功能：
  * - 弹簧臂相机基座

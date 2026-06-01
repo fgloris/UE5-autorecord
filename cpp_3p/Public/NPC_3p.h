@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "NPC.h"
-#include "NPC_new.generated.h"
+#include "NPC_3p.generated.h"
 
 class UNavigationSystemV1;
 class UCharacterMovementComponent;
@@ -36,12 +36,12 @@ enum class ENPCExploreCameraAction : uint8
 };
 
 UCLASS()
-class CPP_3P_API ANPC_new : public ANPC
+class CPP_3P_API ANPC_3p : public ANPC
 {
 	GENERATED_BODY()
 
 public:
-	ANPC_new();
+	ANPC_3p();
 
 	UFUNCTION(BlueprintCallable, Category = "Explore")
 	void ExecuteNextStep(float DeltaTime);
