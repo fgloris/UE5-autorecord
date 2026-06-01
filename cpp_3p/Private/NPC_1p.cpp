@@ -327,6 +327,8 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
     const FVector DesiredFootLocation = StartFootLocation + Dir2D * ProbeStepDistance;
 
     FNavLocation ProjectedLocation;
+
+    // NavMesh 投影检查
     const FVector QueryExtent(GridSize * 0.5f, GridSize * 0.5f, 200.0f);
     if (!NavSys->ProjectPointToNavigation(DesiredFootLocation, ProjectedLocation, QueryExtent))
     {
@@ -334,11 +336,6 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
     }
 
     const FVector LandingFootLocation = ProjectedLocation.Location;
-
-    if (FVector::Dist2D(StartFootLocation, LandingFootLocation) < 10.0f)
-    {
-        return false;
-    }
 
     if (!IsLocationValidForNPC(LandingFootLocation))
     {

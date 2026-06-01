@@ -440,12 +440,6 @@ bool ANPC_3p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
 
     const FVector LandingFootLocation = ProjectedLocation.Location;
 
-    // 落点不能太接近起点
-    if (FVector::Dist2D(StartFootLocation, LandingFootLocation) < 10.0f)
-    {
-        return false;
-    }
-
     // // 高度差限制
     // if (FMath::Abs(LandingFootLocation.Z - StartFootLocation.Z) > MaxStepHeight)
     // {
