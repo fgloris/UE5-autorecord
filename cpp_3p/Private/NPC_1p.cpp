@@ -46,7 +46,7 @@ void ANPC_1p::BeginPlay()
         CameraBoom->bDoCollisionTest = false;
         CameraBoom->SetRelativeLocation(FirstPersonCameraRelativeLocation);
         CameraBoom->SetAbsolute(false, false, false);
-        SetCameraBoomYawRelativePitchWorld(CameraBoom, FRotator(CameraBoomPitch, 0.0f, 0.0f));
+        SetCameraBoomYawRelativePitchWorld(CameraBoom, FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f));
     }
 }
 
@@ -263,21 +263,10 @@ bool ANPC_1p::GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector
         return false;
     }
 
-    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    if (!CameraBoomComp)
-    {
-        return false;
-    }
-
-    FVector CamForward = CameraBoomComp->GetForwardVector();
-    CamForward.Z = 0.0f;
-    CamForward = CamForward.GetSafeNormal();
-    if (CamForward.IsNearlyZero())
-    {
-        CamForward = GetActorForwardVector().GetSafeNormal2D();
-    }
-
-    OutDirection = CamForward;
+    // In first-person mode LR turns the actor itself.  The spring arm keeps zero
+    // relative yaw and naturally follows the actor, so forward movement should use
+    // the actor forward vector, matching CharacterMovement's normal walking logic.
+    OutDirection = GetActorForwardVector().GetSafeNormal2D();
     return !OutDirection.IsNearlyZero();
 }
 
@@ -572,17 +561,19 @@ FRotator ANPC_1p::GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* 
 {
     if (!CameraBoomComp)
     {
-        return FRotator(CameraBoomPitch, 0.0f, 0.0f);
+        return FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
     }
 
-    // Mixed convention requested by the current first-person setup:
-    // Pitch is interpreted in world space; yaw is interpreted relative to the actor.
+    // First-person convention:
+    // - Yaw is the actor's world yaw. LR camera actions rotate the actor directly.
+    // - The spring arm's relative yaw stays zero, so it follows the actor naturally.
+    // - Pitch is read from the spring arm's world rotation.
     const float WorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
-    const float RelativeYaw = CameraBoomComp->GetRelativeRotation().Yaw;
-    return FRotator(WorldPitch, RelativeYaw, 0.0f);
+    const float ActorWorldYaw = GetActorRotation().Yaw;
+    return FRotator(WorldPitch, ActorWorldYaw, 0.0f);
 }
 
-void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation) const
+void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation)
 {
     if (!CameraBoomComp)
     {
@@ -591,11 +582,15 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
 
     CameraBoomComp->SetAbsolute(false, false, false);
 
-    // Apply yaw as relative rotation first.  Keep relative pitch zero here; pitch is then
-    // imposed from world space below.  For normal characters actor pitch is zero, so this
-    // is also stable when the Blueprint only rotates yaw.
-    CameraBoomComp->SetRelativeRotation(FRotator(0.0f, MixedCameraRotation.Yaw, 0.0f));
+    // LR controls the character body directly.  Since the spring arm remains attached
+    // with zero relative yaw, it is carried by the actor rotation instead of turning
+    // independently.
+    FRotator ActorRotation = GetActorRotation();
+    ActorRotation.Yaw = MixedCameraRotation.Yaw;
+    SetActorRotation(ActorRotation);
 
-    const float CurrentWorldYaw = CameraBoomComp->GetComponentRotation().Yaw;
-    CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, CurrentWorldYaw, 0.0f));
+    // Keep camera yaw relative to the actor at zero.  Apply pitch in world space while
+    // preserving the actor-driven world yaw.
+    CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+    CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, GetActorRotation().Yaw, 0.0f));
 }
