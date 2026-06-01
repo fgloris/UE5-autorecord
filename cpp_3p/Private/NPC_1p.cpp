@@ -25,12 +25,10 @@ ANPC_1p::ANPC_1p()
 
     CameraBoomLength = 0.0f;
     FirstPersonCameraRelativeLocation = FVector(0.0f, 0.0f, 60.0f);
-    TurnToMoveDirectionDuration = 0.35f;
-    TurnInPlaceWalkSpeedScale = 0.2f;
+    TurnInPlaceYawSpeedDegrees = 60.0f;
     TurnYawToleranceDegrees = 1.0f;
     InPlacePaceInputScale = 0.12f;
     InPlacePaceCyclesPerAction = 1.0f;
-    bRestoreLocationAfterInPlacePacing = true;
 
     if (CameraBoom)
     {
@@ -77,14 +75,6 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
 
 void ANPC_1p::ClearExploreMoveTarget()
 {
-    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-    {
-        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
-        {
-            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction;
-        }
-    }
-
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
     StartExploreActorLocation = FVector::ZeroVector;
@@ -92,7 +82,6 @@ void ANPC_1p::ClearExploreMoveTarget()
     CurrentExploreMoveAction = ENPC1PExploreMoveAction::Idle;
     CurrentExplorePhase = ENPC1PExplorePhase::None;
     CurrentExploreActionElapsed = 0.0f;
-    OriginalMaxWalkSpeedForExploreAction = 0.0f;
     bWalkCameraActionStarted = false;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
@@ -179,11 +168,6 @@ void ANPC_1p::StartExploreAction()
     CurrentExploreActionElapsed = 0.0f;
     bWalkCameraActionStarted = false;
 
-    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-    {
-        OriginalMaxWalkSpeedForExploreAction = MoveComp->MaxWalkSpeed;
-    }
-
     if (Picked.Action == ENPC1PExploreMoveAction::Idle)
     {
         CurrentExplorePhase = ENPC1PExplorePhase::IdleCamera;
@@ -214,11 +198,12 @@ void ANPC_1p::StartExploreAction()
         const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
         SetRecorderSignals(0, 0, YawDelta < 0.0f ? 1 : (YawDelta > 0.0f ? 2 : 0), 0);
 
-        if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees || GetExploreTurnDuration() <= KINDA_SMALL_NUMBER)
+        if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
         {
             SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
+            CurrentExploreActionElapsed = 0.0f;
         }
     }
 }
@@ -231,14 +216,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     }
 
     const bool bIsIdleAction = CurrentExploreMoveAction == ENPC1PExploreMoveAction::Idle;
-    const float TurnDuration = bIsIdleAction ? 0.0f : GetExploreTurnDuration();
     const float WalkDuration = FMath::Max(ExploreActionDuration, KINDA_SMALL_NUMBER);
-    const float TotalDuration = bIsIdleAction ? WalkDuration : (TurnDuration + WalkDuration);
-
-    const float PreviousElapsed = CurrentExploreActionElapsed;
-    const float RemainingTime = FMath::Max(TotalDuration - PreviousElapsed, 0.0f);
-    const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
-    CurrentExploreActionElapsed = FMath::Min(PreviousElapsed + EffectiveDeltaTime, TotalDuration);
 
     UCharacterMovementComponent* MoveComp = GetCharacterMovement();
     if (!MoveComp)
@@ -248,11 +226,15 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     }
 
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
 
     if (bIsIdleAction)
     {
+        const float RemainingTime = FMath::Max(WalkDuration - CurrentExploreActionElapsed, 0.0f);
+        const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
+        CurrentExploreActionElapsed = FMath::Min(CurrentExploreActionElapsed + EffectiveDeltaTime, WalkDuration);
         const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
+        const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
+
         if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
             const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), Alpha).Rotator();
@@ -262,76 +244,85 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
         {
             MoveComp->SetMovementMode(MOVE_Walking);
-            if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
-            {
-                MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction * FMath::Clamp(TurnInPlaceWalkSpeedScale, 0.0f, 1.0f);
-            }
             const float PacePhase = Alpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
             const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
             AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
         }
-    }
-    else if (CurrentExploreActionElapsed < TurnDuration)
-    {
-        const float TurnAlpha = FMath::Clamp(CurrentExploreActionElapsed / FMath::Max(TurnDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
-        const FRotator MixedActorRotation = FQuat::Slerp(StartTurnActorRotation.Quaternion(), DesiredTurnActorRotation.Quaternion(), TurnAlpha).Rotator();
-        SetActorRotation(FRotator(0.0f, MixedActorRotation.Yaw, 0.0f));
 
-        MoveComp->SetMovementMode(MOVE_Walking);
-        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
+        if (CurrentExploreActionElapsed >= WalkDuration)
         {
-            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction * FMath::Clamp(TurnInPlaceWalkSpeedScale, 0.0f, 1.0f);
-        }
+            if (CameraBoomComp && bHasDesiredCameraWorldRotation)
+            {
+                SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
+            }
 
-        const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, DesiredTurnActorRotation.Yaw);
-        SetRecorderSignals(0, 0, YawDeltaRemaining < 0.0f ? 1 : (YawDeltaRemaining > 0.0f ? 2 : 0), 0);
+
+            const FVector ReachedLocation = GetActorLocation();
+            ClearExploreMoveTarget();
+            OnExploreMoveTargetReached(ReachedLocation);
+        }
+        return;
+    }
+
+    if (CurrentExplorePhase == ENPC1PExplorePhase::TurnToMoveDirection)
+    {
+        MoveComp->SetMovementMode(MOVE_Walking);
+        const float CurrentYaw = GetActorRotation().Yaw;
+        const float TargetYaw = DesiredTurnActorRotation.Yaw;
+        const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
+        const float MaxYawStep = FMath::Max(TurnInPlaceYawSpeedDegrees, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+        const float NewYaw = FMath::FixedTurn(CurrentYaw, TargetYaw, MaxYawStep);
+        SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
+
+        const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetYaw);
+        SetRecorderSignals(0, 0, YawDeltaRemaining < -TurnYawToleranceDegrees ? 1 : (YawDeltaRemaining > TurnYawToleranceDegrees ? 2 : 0), 0);
 
         if (InPlacePaceInputScale > KINDA_SMALL_NUMBER)
         {
-            const float PacePhase = TurnAlpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
-            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
+            // Turning has no fixed duration now, so drive the stepping cycle by real time instead of action alpha.
+            CurrentExploreActionElapsed += DeltaTime;
+            const float PacePhase = CurrentExploreActionElapsed * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
+            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale;
             AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
         }
-    }
-    else
-    {
-        if (CurrentExplorePhase != ENPC1PExplorePhase::WalkForward)
+
+        if (FMath::Abs(YawDeltaBefore) <= TurnYawToleranceDegrees || FMath::Abs(YawDeltaRemaining) <= TurnYawToleranceDegrees)
         {
             SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
+            CurrentExploreActionElapsed = 0.0f;
         }
-
-        if (OriginalMaxWalkSpeedForExploreAction > KINDA_SMALL_NUMBER)
-        {
-            MoveComp->MaxWalkSpeed = OriginalMaxWalkSpeedForExploreAction;
-        }
-
-        const float WalkElapsed = CurrentExploreActionElapsed - TurnDuration;
-        const float WalkAlpha = FMath::Clamp(WalkElapsed / WalkDuration, 0.0f, 1.0f);
-
-        if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-        {
-            const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), WalkAlpha).Rotator();
-            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
-        }
-
-        MoveComp->SetMovementMode(MOVE_Walking);
-        AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), InputScaleByFrame);
+        return;
     }
 
-    if (CurrentExploreActionElapsed >= TotalDuration)
+    if (CurrentExplorePhase != ENPC1PExplorePhase::WalkForward)
+    {
+        BeginWalkCameraAction();
+        CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
+        CurrentExploreActionElapsed = 0.0f;
+    }
+
+    const float RemainingTime = FMath::Max(WalkDuration - CurrentExploreActionElapsed, 0.0f);
+    const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
+    CurrentExploreActionElapsed = FMath::Min(CurrentExploreActionElapsed + EffectiveDeltaTime, WalkDuration);
+    const float WalkAlpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
+    const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
+
+    if (CameraBoomComp && bHasDesiredCameraWorldRotation)
+    {
+        const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), WalkAlpha).Rotator();
+        SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
+    }
+
+    MoveComp->SetMovementMode(MOVE_Walking);
+    AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), InputScaleByFrame);
+
+    if (CurrentExploreActionElapsed >= WalkDuration)
     {
         if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
             SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
-        }
-
-        if (bIsIdleAction &&
-            CurrentExploreCameraAction != ENPC1PExploreCameraAction::None &&
-            bRestoreLocationAfterInPlacePacing)
-        {
-            SetActorLocation(StartExploreActorLocation, false);
         }
 
         const FVector ReachedLocation = GetActorLocation();
@@ -586,7 +577,7 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
     {
         const float ColorScalar = FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitedScore), 0.0f, 1.0f);
         const FColor Color = FColor::MakeRedToGreenColorFromScalar(ColorScalar);
-        const float DrawDuration = FMath::Max(ExploreActionDuration + TurnToMoveDirectionDuration, KINDA_SMALL_NUMBER);
+        const float DrawDuration = FMath::Max(ExploreActionDuration + 180.0f / FMath::Max(TurnInPlaceYawSpeedDegrees, 1.0f), KINDA_SMALL_NUMBER);
         DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, DrawDuration);
         DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, DrawDuration, 0, 1.5f);
     }
@@ -903,7 +894,3 @@ void ANPC_1p::SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD)
     CurrentRecorderUD = UD;
 }
 
-float ANPC_1p::GetExploreTurnDuration() const
-{
-    return FMath::Max(TurnToMoveDirectionDuration, 0.0f);
-}

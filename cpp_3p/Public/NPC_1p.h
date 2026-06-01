@@ -106,13 +106,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|First Person")
 	FVector FirstPersonCameraRelativeLocation;
 
-	/** Seconds spent rotating in place toward the sampled movement direction before walking forward. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
-	float TurnToMoveDirectionDuration;
-
-	/** MaxWalkSpeed multiplier used during in-place turning/pacing. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0"))
-	float TurnInPlaceWalkSpeedScale;
+	/** Constant yaw speed used while rotating in place toward the sampled movement direction. ExploreActionDuration only controls the later walking phase. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float TurnInPlaceYawSpeedDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float TurnYawToleranceDegrees;
@@ -124,9 +120,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.5", UIMin = "0.5"))
 	float InPlacePaceCyclesPerAction;
 
-	/** Restore the actor to the action start location after an idle camera-turn pacing action, preventing accumulated drift. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person")
-	bool bRestoreLocationAfterInPlacePacing;
 
 private:
 	void StartExploreAction();
@@ -151,7 +144,6 @@ private:
 	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
 	void BeginWalkCameraAction();
 	void SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD);
-	float GetExploreTurnDuration() const;
 
 private:
 	bool bIsExecutingExploreAction = false;
@@ -163,7 +155,6 @@ private:
 	ENPC1PExploreMoveAction LastNonIdleExploreMoveAction = ENPC1PExploreMoveAction::Idle;
 	ENPC1PExplorePhase CurrentExplorePhase = ENPC1PExplorePhase::None;
 	float CurrentExploreActionElapsed = 0.0f;
-	float OriginalMaxWalkSpeedForExploreAction = 0.0f;
 	FRotator StartTurnActorRotation = FRotator::ZeroRotator;
 	FRotator DesiredTurnActorRotation = FRotator::ZeroRotator;
 	bool bWalkCameraActionStarted = false;
