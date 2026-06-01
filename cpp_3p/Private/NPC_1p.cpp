@@ -165,16 +165,16 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
     if (CurrentExploreMoveAction == ENPC1PExploreMoveAction::W)
     {
-        MoveComp->SetMovementMode(MOVE_Walking);
+        FVector FrameMoveDirection = FVector::ZeroVector;
+        if (!GetWorldDirectionForAction(CurrentExploreMoveAction, FrameMoveDirection))
+        {
+            ClearExploreMoveTarget();
+            return;
+        }
+        FrameMoveDirection = FrameMoveDirection.GetSafeNormal2D();
 
-        // Execute the sampled legal landing explicitly. In this project the Blueprint calls
-        // ExecuteNextStep from Event Tick, which can run in an order where AddMovementInput
-        // is consumed too late/too weakly and the NPC appears to only pace/rotate.  The
-        // landing itself has already passed the inherited NavMesh + capsule checks, so we
-        // sweep toward that target directly while still reusing the same collision setup.
-        const FVector DesiredLocation = FMath::Lerp(StartExploreActorLocation, CurrentExploreMoveTarget, Alpha);
-        FHitResult Hit;
-        SetActorLocation(DesiredLocation, true, &Hit);
+        MoveComp->SetMovementMode(MOVE_Walking);
+        AddMovementInput(FrameMoveDirection, InputScaleByFrame);
     }
     else if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
     {
