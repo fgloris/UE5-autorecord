@@ -25,7 +25,7 @@ ANPC_1p::ANPC_1p()
 
     CameraBoomLength = 0.0f;
     FirstPersonCameraRelativeLocation = FVector(0.0f, 0.0f, 60.0f);
-    TurnInPlaceYawSpeedDegrees = 60.0f;
+    TurnInPlaceYawSpeedDegrees = 15.0f;
     TurnYawToleranceDegrees = 1.0f;
     InPlacePaceInputScale = 0.12f;
     InPlacePaceCyclesPerAction = 1.0f;
