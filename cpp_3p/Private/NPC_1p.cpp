@@ -784,6 +784,8 @@ ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& Curr
     }
 
     OutDesiredRotation = FRotator(DesiredPitch, DesiredYaw, CurrentCameraRotation.Roll);
+    
+    OutDesiredRotation.Pitch = FMath::Clamp(OutDesiredRotation.Pitch, MinCameraPitchDegrees, MaxCameraPitchDegrees);
     return MakeCameraAction(LRSignal, EffectiveUDSignal);
 }
 
@@ -912,6 +914,8 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
     SetActorRotation(ActorRotation);
 
     CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+    
+    MixedCameraRotation.Pitch = FMath::Clamp(MixedCameraRotation.Pitch, MinCameraPitchDegrees, MaxCameraPitchDegrees);
     CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, GetActorRotation().Yaw, 0.0f));
 }
 
