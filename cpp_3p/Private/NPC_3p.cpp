@@ -606,7 +606,7 @@ ENPCExploreCameraAction ANPC_3p::ChooseRandomCameraAction(const FRotator& Curren
     {
         DesiredPitch += CameraPitchStepDegrees;
     }
-    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 15.0f);
+    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 0.0f);
 
     int32 EffectiveUDSignal = 0;
     if (DesiredPitch < CurrentPitch - KINDA_SMALL_NUMBER)
