@@ -15,7 +15,7 @@ ANPC_1p::ANPC_1p()
 
     ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 10.0f;
+    CameraYawStepDegrees = 15.0f;
     CameraPitchStepDegrees = 10.0f;
     MaxCameraPitchOffsetActionCount = 1;
     CameraPitchHoldToleranceDegrees = 0.1f;
@@ -83,6 +83,7 @@ void ANPC_1p::ClearExploreMoveTarget()
     CurrentExplorePhase = ENPC1PExplorePhase::None;
     CurrentExploreActionElapsed = 0.0f;
     bWalkCameraActionStarted = false;
+    CurrentTurnCameraAction = ENPC1PExploreCameraAction::None;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
     StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
@@ -188,16 +189,21 @@ void ANPC_1p::StartExploreAction()
         }
 
         StartTurnActorRotation = GetActorRotation();
-        DesiredTurnActorRotation = Picked.WorldDirection.GetSafeNormal2D().Rotation();
+        CurrentTurnCameraAction = GetTurnCameraActionForMoveAction(Picked.Action);
+        DesiredTurnActorRotation = StartTurnActorRotation;
+        DesiredTurnActorRotation.Yaw = StartTurnActorRotation.Yaw + GetTurnYawOffsetDegreesForMoveAction(Picked.Action, CurrentTurnCameraAction);
         DesiredTurnActorRotation.Pitch = 0.0f;
         DesiredTurnActorRotation.Roll = 0.0f;
         bHasDesiredCameraWorldRotation = false;
         CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
         DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
 
-        const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
-        SetRecorderSignals(0, 0, YawDelta < 0.0f ? 1 : (YawDelta > 0.0f ? 2 : 0), 0);
+        int32 TurnLR = 0;
+        int32 TurnUD = 0;
+        GetCameraActionSignals(CurrentTurnCameraAction, TurnLR, TurnUD);
+        SetRecorderSignals(0, 0, TurnLR, 0);
 
+        const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
         if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
         {
             SetActorRotation(DesiredTurnActorRotation);
@@ -271,11 +277,37 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         const float TargetYaw = DesiredTurnActorRotation.Yaw;
         const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
         const float MaxYawStep = FMath::Max(TurnInPlaceYawSpeedDegrees, 1.0f) * FMath::Max(DeltaTime, 0.0f);
-        const float NewYaw = FMath::FixedTurn(CurrentYaw, TargetYaw, MaxYawStep);
+
+        int32 TurnLR = 0;
+        int32 TurnUD = 0;
+        GetCameraActionSignals(CurrentTurnCameraAction, TurnLR, TurnUD);
+        SetRecorderSignals(0, 0, FMath::Abs(YawDeltaBefore) > TurnYawToleranceDegrees ? TurnLR : 0, 0);
+
+        float NewYaw = CurrentYaw;
+        if (CurrentTurnCameraAction == ENPC1PExploreCameraAction::L)
+        {
+            NewYaw = CurrentYaw - MaxYawStep;
+            if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDeltaBefore))
+            {
+                NewYaw = TargetYaw;
+            }
+        }
+        else if (CurrentTurnCameraAction == ENPC1PExploreCameraAction::R)
+        {
+            NewYaw = CurrentYaw + MaxYawStep;
+            if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDeltaBefore))
+            {
+                NewYaw = TargetYaw;
+            }
+        }
+        else
+        {
+            NewYaw = TargetYaw;
+        }
+
         SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
 
         const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetYaw);
-        SetRecorderSignals(0, 0, YawDeltaRemaining < -TurnYawToleranceDegrees ? 1 : (YawDeltaRemaining > TurnYawToleranceDegrees ? 2 : 0), 0);
 
         if (InPlacePaceInputScale > KINDA_SMALL_NUMBER)
         {
@@ -439,42 +471,11 @@ bool ANPC_1p::GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector
 
 void ANPC_1p::GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS, int32& OutAD) const
 {
-    OutWS = 0;
+    // First-person data should not record strafing/backward intent.
+    // The 8-direction sample is only used to pick a target direction; the NPC turns first,
+    // then walks forward with W once aligned.
+    OutWS = (Action == ENPC1PExploreMoveAction::Idle) ? 0 : 1;
     OutAD = 0;
-
-    switch (Action)
-    {
-    case ENPC1PExploreMoveAction::W:
-        OutWS = 1;
-        break;
-    case ENPC1PExploreMoveAction::S:
-        OutWS = 2;
-        break;
-    case ENPC1PExploreMoveAction::A:
-        OutAD = 1;
-        break;
-    case ENPC1PExploreMoveAction::D:
-        OutAD = 2;
-        break;
-    case ENPC1PExploreMoveAction::WA:
-        OutWS = 1;
-        OutAD = 1;
-        break;
-    case ENPC1PExploreMoveAction::WD:
-        OutWS = 1;
-        OutAD = 2;
-        break;
-    case ENPC1PExploreMoveAction::SA:
-        OutWS = 2;
-        OutAD = 1;
-        break;
-    case ENPC1PExploreMoveAction::SD:
-        OutWS = 2;
-        OutAD = 2;
-        break;
-    default:
-        break;
-    }
 }
 
 ENPC1PExploreMoveAction ANPC_1p::GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const
@@ -501,6 +502,51 @@ ENPC1PExploreMoveAction ANPC_1p::GetOppositeMoveAction(ENPC1PExploreMoveAction A
         return ENPC1PExploreMoveAction::Idle;
     }
 }
+
+ENPC1PExploreCameraAction ANPC_1p::GetTurnCameraActionForMoveAction(ENPC1PExploreMoveAction Action) const
+{
+    switch (Action)
+    {
+    case ENPC1PExploreMoveAction::A:
+    case ENPC1PExploreMoveAction::WA:
+    case ENPC1PExploreMoveAction::SA:
+        return ENPC1PExploreCameraAction::L;
+    case ENPC1PExploreMoveAction::D:
+    case ENPC1PExploreMoveAction::WD:
+    case ENPC1PExploreMoveAction::SD:
+        return ENPC1PExploreCameraAction::R;
+    case ENPC1PExploreMoveAction::S:
+        return FMath::RandBool() ? ENPC1PExploreCameraAction::L : ENPC1PExploreCameraAction::R;
+    default:
+        return ENPC1PExploreCameraAction::None;
+    }
+}
+
+float ANPC_1p::GetTurnYawOffsetDegreesForMoveAction(ENPC1PExploreMoveAction Action, ENPC1PExploreCameraAction TurnAction) const
+{
+    switch (Action)
+    {
+    case ENPC1PExploreMoveAction::W:
+        return 0.0f;
+    case ENPC1PExploreMoveAction::WA:
+        return -45.0f;
+    case ENPC1PExploreMoveAction::A:
+        return -90.0f;
+    case ENPC1PExploreMoveAction::SA:
+        return -135.0f;
+    case ENPC1PExploreMoveAction::S:
+        return (TurnAction == ENPC1PExploreCameraAction::L) ? -180.0f : 180.0f;
+    case ENPC1PExploreMoveAction::SD:
+        return 135.0f;
+    case ENPC1PExploreMoveAction::D:
+        return 90.0f;
+    case ENPC1PExploreMoveAction::WD:
+        return 45.0f;
+    default:
+        return 0.0f;
+    }
+}
+
 
 int32 ANPC_1p::SampleRandomCandidate(const TArray<FExploreMoveCandidate>& Candidates) const
 {

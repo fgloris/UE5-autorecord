@@ -131,6 +131,8 @@ private:
 	bool GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector& OutDirection) const;
 	void GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
 	ENPC1PExploreMoveAction GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const;
+	ENPC1PExploreCameraAction GetTurnCameraActionForMoveAction(ENPC1PExploreMoveAction Action) const;
+	float GetTurnYawOffsetDegreesForMoveAction(ENPC1PExploreMoveAction Action, ENPC1PExploreCameraAction TurnAction) const;
 	float GetVisitedScoreAtLocation(const FVector& WorldLocation) const;
 	int32 SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const;
 	int32 SampleRandomCandidate(const TArray<FExploreMoveCandidate>& Candidates) const;
@@ -158,6 +160,7 @@ private:
 	FRotator StartTurnActorRotation = FRotator::ZeroRotator;
 	FRotator DesiredTurnActorRotation = FRotator::ZeroRotator;
 	bool bWalkCameraActionStarted = false;
+	ENPC1PExploreCameraAction CurrentTurnCameraAction = ENPC1PExploreCameraAction::None;
 
 	bool bHasDesiredCameraWorldRotation = false;
 	ENPC1PExploreCameraAction CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;

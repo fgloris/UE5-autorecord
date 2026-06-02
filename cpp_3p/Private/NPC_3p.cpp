@@ -15,7 +15,7 @@ ANPC_3p::ANPC_3p()
 
     ExploreActionDuration = 1.0f;
 
-    CameraYawStepDegrees = 10.0f;
+    CameraYawStepDegrees = 15.0f;
     CameraPitchStepDegrees = 10.0f;
     MaxCameraPitchOffsetActionCount = 1;
     CameraPitchHoldToleranceDegrees = 0.1f;
