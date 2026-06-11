@@ -7,7 +7,8 @@
 #include "NavigationSystem.h"
 #include "NPCMovementRecorder.h"
 
-ANPC::ANPC()
+ANPC::ANPC(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	PrimaryActorTick.bStartWithTickEnabled = false;

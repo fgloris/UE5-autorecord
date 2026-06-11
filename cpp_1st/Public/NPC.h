@@ -112,7 +112,7 @@ class CPP_1ST_API ANPC : public ACharacter
 	GENERATED_BODY()
 
 public:
-	ANPC();
+	ANPC(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 protected:
 	virtual void BeginPlay() override;

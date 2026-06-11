@@ -6,6 +6,7 @@
 
 class UNavigationSystemV1;
 class UCharacterMovementComponent;
+class UNPC1PCharacterMovementComponent;
 
 UENUM()
 enum class ENPC1PExploreMoveAction : uint8
@@ -50,7 +51,7 @@ class CPP_1ST_API ANPC_1p : public ANPC
 	GENERATED_BODY()
 
 public:
-	ANPC_1p();
+	ANPC_1p(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	UFUNCTION(BlueprintCallable, Category = "Explore")
 	void ExecuteNextStep(float DeltaTime);
@@ -113,9 +114,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float TurnYawToleranceDegrees;
 
-	/** Tiny alternating movement input used only to make idle camera turns or turn-in-place actions play a small stepping motion. */
+	/** Legacy switch/scale. Values <= 0 disable code-only in-place pacing animation. No real movement input is applied anymore. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float InPlacePaceInputScale;
+
+	/** Fake XY speed exposed through CharacterMovement->Velocity while custom mode blocks actual translation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float InPlacePaceAnimSpeed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.5", UIMin = "0.5"))
 	float InPlacePaceCyclesPerAction;
@@ -145,6 +150,10 @@ private:
 	void SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation);
 	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
 	void BeginWalkCameraAction();
+	void BeginCodeOnlyInPlacePace();
+	void UpdateCodeOnlyInPlacePace();
+	void EndCodeOnlyInPlacePace(bool bRestoreWalking = true);
+	UNPC1PCharacterMovementComponent* GetNPC1PMovementComponent() const;
 	void SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD);
 
 private:

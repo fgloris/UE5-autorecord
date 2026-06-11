@@ -7,8 +7,10 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "NavigationSystem.h"
 #include "NPCMovementRecorder.h"
+#include "NPC1PCharacterMovementComponent.h"
 
-ANPC_1p::ANPC_1p()
+ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer.SetDefaultSubobjectClass<UNPC1PCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = true;
@@ -28,6 +30,7 @@ ANPC_1p::ANPC_1p()
     TurnInPlaceYawSpeedDegrees = 15.0f;
     TurnYawToleranceDegrees = 1.0f;
     InPlacePaceInputScale = 0.12f;
+    InPlacePaceAnimSpeed = 120.0f;
     InPlacePaceCyclesPerAction = 1.0f;
 
     if (CameraBoom)
@@ -75,6 +78,8 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
 
 void ANPC_1p::ClearExploreMoveTarget()
 {
+    EndCodeOnlyInPlacePace(true);
+
     bIsExecutingExploreAction = false;
     CurrentExploreMoveTarget = FVector::ZeroVector;
     StartExploreActorLocation = FVector::ZeroVector;
@@ -179,6 +184,10 @@ void ANPC_1p::StartExploreAction()
         CurrentRecorderWS = 0;
         CurrentRecorderAD = 0;
         bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
+        if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None)
+        {
+            BeginCodeOnlyInPlacePace();
+        }
     }
     else
     {
@@ -206,10 +215,15 @@ void ANPC_1p::StartExploreAction()
         const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
         if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
         {
+            EndCodeOnlyInPlacePace(true);
             SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
             CurrentExploreActionElapsed = 0.0f;
+        }
+        else
+        {
+            BeginCodeOnlyInPlacePace();
         }
     }
 }
@@ -239,7 +253,6 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
         CurrentExploreActionElapsed = FMath::Min(CurrentExploreActionElapsed + EffectiveDeltaTime, WalkDuration);
         const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
-        const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
 
         if (CameraBoomComp && bHasDesiredCameraWorldRotation)
         {
@@ -249,10 +262,11 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
         if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
         {
-            MoveComp->SetMovementMode(MOVE_Walking);
-            const float PacePhase = Alpha * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
-            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale * InputScaleByFrame;
-            AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
+            UpdateCodeOnlyInPlacePace();
+        }
+        else
+        {
+            EndCodeOnlyInPlacePace(true);
         }
 
         if (CurrentExploreActionElapsed >= WalkDuration)
@@ -272,7 +286,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
     if (CurrentExplorePhase == ENPC1PExplorePhase::TurnToMoveDirection)
     {
-        MoveComp->SetMovementMode(MOVE_Walking);
+        UpdateCodeOnlyInPlacePace();
         const float CurrentYaw = GetActorRotation().Yaw;
         const float TargetYaw = DesiredTurnActorRotation.Yaw;
         const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
@@ -311,15 +325,19 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
         if (InPlacePaceInputScale > KINDA_SMALL_NUMBER)
         {
-            // Turning has no fixed duration now, so drive the stepping cycle by real time instead of action alpha.
+            // Turning has no fixed duration now, so drive the stepping cycle by real time.
+            // The custom movement mode exposes fake Velocity to AnimBP but never translates the Actor.
             CurrentExploreActionElapsed += DeltaTime;
-            const float PacePhase = CurrentExploreActionElapsed * 2.0f * PI * FMath::Max(InPlacePaceCyclesPerAction, 0.5f);
-            const float PaceScale = FMath::Sin(PacePhase) * InPlacePaceInputScale;
-            AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), PaceScale);
+            UpdateCodeOnlyInPlacePace();
+        }
+        else
+        {
+            EndCodeOnlyInPlacePace(true);
         }
 
         if (FMath::Abs(YawDeltaBefore) <= TurnYawToleranceDegrees || FMath::Abs(YawDeltaRemaining) <= TurnYawToleranceDegrees)
         {
+            EndCodeOnlyInPlacePace(true);
             SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
@@ -330,6 +348,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
     if (CurrentExplorePhase != ENPC1PExplorePhase::WalkForward)
     {
+        EndCodeOnlyInPlacePace(true);
         BeginWalkCameraAction();
         CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
         CurrentExploreActionElapsed = 0.0f;
@@ -347,6 +366,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
     }
 
+    EndCodeOnlyInPlacePace(true);
     MoveComp->SetMovementMode(MOVE_Walking);
     AddMovementInput(GetActorForwardVector().GetSafeNormal2D(), InputScaleByFrame);
 
@@ -738,7 +758,7 @@ bool ANPC_1p::IsMovePathCollisionFree(const FVector& StartActorLocation, const F
 ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
     const float CameraPitchCenter = CameraBoomPitch;
-    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -15.0f, 15.0f);
+    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 15.0f);
     const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
 
     UpdatePitchOffsetHoldState(CurrentPitchOffset);
@@ -761,7 +781,7 @@ ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& Curr
     {
         DesiredPitch += CameraPitchStepDegrees;
     }
-    DesiredPitch = FMath::Clamp(DesiredPitch, -15.0f, 15.0f);
+    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 15.0f);
 
     int32 EffectiveUDSignal = 0;
     if (DesiredPitch < CurrentPitch - KINDA_SMALL_NUMBER)
@@ -930,6 +950,84 @@ void ANPC_1p::BeginWalkCameraAction()
     CurrentRecorderWS = 1;
     CurrentRecorderAD = 0;
     bHasDesiredCameraWorldRotation = CurrentExploreCameraAction != ENPC1PExploreCameraAction::None;
+}
+
+
+UNPC1PCharacterMovementComponent* ANPC_1p::GetNPC1PMovementComponent() const
+{
+    return Cast<UNPC1PCharacterMovementComponent>(GetCharacterMovement());
+}
+
+void ANPC_1p::BeginCodeOnlyInPlacePace()
+{
+    if (InPlacePaceInputScale <= KINDA_SMALL_NUMBER || InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
+    {
+        EndCodeOnlyInPlacePace(true);
+        return;
+    }
+
+    UNPC1PCharacterMovementComponent* MoveComp = GetNPC1PMovementComponent();
+    if (!MoveComp)
+    {
+        return;
+    }
+
+    FVector FakeVelocity = GetActorForwardVector().GetSafeNormal2D() * InPlacePaceAnimSpeed;
+    if (FakeVelocity.IsNearlyZero())
+    {
+        FakeVelocity = FVector::ForwardVector * InPlacePaceAnimSpeed;
+    }
+
+    MoveComp->StartInPlacePace(FakeVelocity);
+
+    // Some AnimBPs also check movement input / acceleration in addition to velocity.
+    // Our custom movement component consumes this without translating the Actor.
+    AddMovementInput(FakeVelocity.GetSafeNormal2D(), 1.0f, true);
+}
+
+void ANPC_1p::UpdateCodeOnlyInPlacePace()
+{
+    if (InPlacePaceInputScale <= KINDA_SMALL_NUMBER || InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
+    {
+        EndCodeOnlyInPlacePace(true);
+        return;
+    }
+
+    UNPC1PCharacterMovementComponent* MoveComp = GetNPC1PMovementComponent();
+    if (!MoveComp)
+    {
+        return;
+    }
+
+    FVector FakeVelocity = GetActorForwardVector().GetSafeNormal2D() * InPlacePaceAnimSpeed;
+    if (FakeVelocity.IsNearlyZero())
+    {
+        FakeVelocity = FVector::ForwardVector * InPlacePaceAnimSpeed;
+    }
+
+    if (!MoveComp->IsInPlacePaceMode())
+    {
+        MoveComp->StartInPlacePace(FakeVelocity);
+    }
+    else
+    {
+        MoveComp->UpdateInPlacePaceVelocity(FakeVelocity);
+    }
+
+    // Some AnimBPs also check movement input / acceleration in addition to velocity.
+    // Our custom movement component consumes this without translating the Actor.
+    AddMovementInput(FakeVelocity.GetSafeNormal2D(), 1.0f, true);
+}
+
+void ANPC_1p::EndCodeOnlyInPlacePace(bool bRestoreWalking)
+{
+    if (UNPC1PCharacterMovementComponent* MoveComp = GetNPC1PMovementComponent())
+    {
+        if (MoveComp->IsInPlacePaceMode())
+        {
+            MoveComp->StopInPlacePace(bRestoreWalking);
+        }
+    }
 }
 
 void ANPC_1p::SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD)
