@@ -29,9 +29,9 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
     FirstPersonCameraRelativeLocation = FVector(0.0f, 0.0f, 60.0f);
     TurnInPlaceYawSpeedDegrees = 15.0f;
     TurnYawToleranceDegrees = 1.0f;
-    InPlacePaceInputScale = 0.12f;
-    InPlacePaceAnimSpeed = 120.0f;
-    InPlacePaceCyclesPerAction = 1.0f;
+    // Fake animation-facing velocity used only during idle camera / turn-in-place.
+    // 24 = previous 120 / 5, so in-place pacing animation is much slower.
+    InPlacePaceAnimSpeed = 24.0f;
 
     if (CameraBoom)
     {
@@ -260,7 +260,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
             SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
         }
 
-        if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None && InPlacePaceInputScale > KINDA_SMALL_NUMBER)
+        if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None)
         {
             UpdateCodeOnlyInPlacePace();
         }
@@ -323,17 +323,11 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
         const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetYaw);
 
-        if (InPlacePaceInputScale > KINDA_SMALL_NUMBER)
-        {
-            // Turning has no fixed duration now, so drive the stepping cycle by real time.
-            // The custom movement mode exposes fake Velocity to AnimBP but never translates the Actor.
-            CurrentExploreActionElapsed += DeltaTime;
-            UpdateCodeOnlyInPlacePace();
-        }
-        else
-        {
-            EndCodeOnlyInPlacePace(true);
-        }
+        // Turning has no fixed duration now, so drive the stepping pose by real time.
+        // The custom movement component exposes fake Velocity/Acceleration to AnimBP
+        // while PhysWalking is intercepted so the Actor never translates.
+        CurrentExploreActionElapsed += DeltaTime;
+        UpdateCodeOnlyInPlacePace();
 
         if (FMath::Abs(YawDeltaBefore) <= TurnYawToleranceDegrees || FMath::Abs(YawDeltaRemaining) <= TurnYawToleranceDegrees)
         {
@@ -960,7 +954,7 @@ UNPC1PCharacterMovementComponent* ANPC_1p::GetNPC1PMovementComponent() const
 
 void ANPC_1p::BeginCodeOnlyInPlacePace()
 {
-    if (InPlacePaceInputScale <= KINDA_SMALL_NUMBER || InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
+    if (InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
     {
         EndCodeOnlyInPlacePace(true);
         return;
@@ -987,7 +981,7 @@ void ANPC_1p::BeginCodeOnlyInPlacePace()
 
 void ANPC_1p::UpdateCodeOnlyInPlacePace()
 {
-    if (InPlacePaceInputScale <= KINDA_SMALL_NUMBER || InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
+    if (InPlacePaceAnimSpeed <= KINDA_SMALL_NUMBER)
     {
         EndCodeOnlyInPlacePace(true);
         return;

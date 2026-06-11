@@ -114,16 +114,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float TurnYawToleranceDegrees;
 
-	/** Legacy switch/scale. Values <= 0 disable code-only in-place pacing animation. No real movement input is applied anymore. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
-	float InPlacePaceInputScale;
-
-	/** Fake XY speed exposed through CharacterMovement->Velocity while custom mode blocks actual translation. */
+	/** Fake XY speed exposed through CharacterMovement->Velocity while PhysWalking blocks actual translation.
+	 *  Set to 24 by default, which is one fifth of the previous 120 in-place animation speed.
+	 *  Values <= 0 disable code-only in-place pacing animation.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float InPlacePaceAnimSpeed;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.5", UIMin = "0.5"))
-	float InPlacePaceCyclesPerAction;
 
 
 private:
