@@ -738,7 +738,7 @@ bool ANPC_1p::IsMovePathCollisionFree(const FVector& StartActorLocation, const F
 ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
     const float CameraPitchCenter = CameraBoomPitch;
-    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 15.0f);
+    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -15.0f, 15.0f);
     const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
 
     UpdatePitchOffsetHoldState(CurrentPitchOffset);
@@ -761,7 +761,7 @@ ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& Curr
     {
         DesiredPitch += CameraPitchStepDegrees;
     }
-    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 15.0f);
+    DesiredPitch = FMath::Clamp(DesiredPitch, -15.0f, 15.0f);
 
     int32 EffectiveUDSignal = 0;
     if (DesiredPitch < CurrentPitch - KINDA_SMALL_NUMBER)
