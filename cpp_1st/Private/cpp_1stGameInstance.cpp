@@ -1,31 +1,31 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "cpp_3pGameInstance.h"
+#include "cpp_1stGameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Logging/LogMacros.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGameInstance, Log, All);
 
 // ==================== 构造函数 ====================
-Ucpp_3pGameInstance::Ucpp_3pGameInstance()
+Ucpp_1stGameInstance::Ucpp_1stGameInstance()
 	: CurrentLevelIndex(0)
 	, bIsLevelListInitialized(false)
 {
 }
 
 // ==================== 初始化 ====================
-void Ucpp_3pGameInstance::Init()
+void Ucpp_1stGameInstance::Init()
 {
 	Super::Init();
 
 	// 初始化关卡列表
 	InitializeLevelList();
-	UE_LOG(LogGameInstance, Log, TEXT("cpp_3pGameInstance初始化完成，共 %d 个关卡"), LevelList.Num());
+	UE_LOG(LogGameInstance, Log, TEXT("cpp_1stGameInstance初始化完成，共 %d 个关卡"), LevelList.Num());
 }
 
 // ==================== 关卡管理 ====================
 
-bool Ucpp_3pGameInstance::SwitchToNextLevel()
+bool Ucpp_1stGameInstance::SwitchToNextLevel()
 {
 	if (!bIsLevelListInitialized || LevelList.Num() == 0)
 	{
@@ -47,7 +47,7 @@ bool Ucpp_3pGameInstance::SwitchToNextLevel()
 	return true;
 }
 
-bool Ucpp_3pGameInstance::SwitchToLevelByIndex(int32 LevelIndex)
+bool Ucpp_1stGameInstance::SwitchToLevelByIndex(int32 LevelIndex)
 {
 	if (!bIsLevelListInitialized || LevelList.Num() == 0)
 	{
@@ -76,12 +76,12 @@ bool Ucpp_3pGameInstance::SwitchToLevelByIndex(int32 LevelIndex)
 
 // ==================== 关卡信息查询 ====================
 
-int32 Ucpp_3pGameInstance::GetCurrentLevelIndex() const
+int32 Ucpp_1stGameInstance::GetCurrentLevelIndex() const
 {
 	return CurrentLevelIndex;
 }
 
-FString Ucpp_3pGameInstance::GetCurrentLevelName() const
+FString Ucpp_1stGameInstance::GetCurrentLevelName() const
 {
 	if (CurrentLevelIndex >= 0 && CurrentLevelIndex < LevelList.Num())
 	{
@@ -90,7 +90,7 @@ FString Ucpp_3pGameInstance::GetCurrentLevelName() const
 	return FString(TEXT(""));
 }
 
-FString Ucpp_3pGameInstance::GetCurrentLevelPath() const
+FString Ucpp_1stGameInstance::GetCurrentLevelPath() const
 {
 	if (CurrentLevelIndex >= 0 && CurrentLevelIndex < LevelList.Num())
 	{
@@ -99,7 +99,7 @@ FString Ucpp_3pGameInstance::GetCurrentLevelPath() const
 	return FString(TEXT(""));
 }
 
-bool Ucpp_3pGameInstance::GetLevelInfoByIndex(int32 LevelIndex, FString& OutLevelName, FString& OutLevelPath) const
+bool Ucpp_1stGameInstance::GetLevelInfoByIndex(int32 LevelIndex, FString& OutLevelName, FString& OutLevelPath) const
 {
 	if (!bIsLevelListInitialized || LevelIndex < 0 || LevelIndex >= LevelList.Num())
 	{
@@ -113,12 +113,12 @@ bool Ucpp_3pGameInstance::GetLevelInfoByIndex(int32 LevelIndex, FString& OutLeve
 	return true;
 }
 
-int32 Ucpp_3pGameInstance::GetTotalLevelCount() const
+int32 Ucpp_1stGameInstance::GetTotalLevelCount() const
 {
 	return LevelList.Num();
 }
 
-void Ucpp_3pGameInstance::PrintAllLevelsInfo() const
+void Ucpp_1stGameInstance::PrintAllLevelsInfo() const
 {
 	UE_LOG(LogGameInstance, Log, TEXT("========== 关卡列表信息 =========="));
 	UE_LOG(LogGameInstance, Log, TEXT("当前关卡索引：%d"), CurrentLevelIndex);
@@ -136,7 +136,7 @@ void Ucpp_3pGameInstance::PrintAllLevelsInfo() const
 
 // ==================== 私有函数 ====================
 
-void Ucpp_3pGameInstance::InitializeLevelList()
+void Ucpp_1stGameInstance::InitializeLevelList()
 {
 	// 清空现有列表
 	LevelList.Empty();

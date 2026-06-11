@@ -107,7 +107,7 @@ struct FNPCNavigationState
  * - 录制组件
  */
 UCLASS()
-class CPP_3P_API ANPC : public ACharacter
+class CPP_1ST_API ANPC : public ACharacter
 {
 	GENERATED_BODY()
 

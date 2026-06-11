@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
-#include "cpp_3pGameInstance.generated.h"
+#include "cpp_1stGameInstance.generated.h"
 
 /**
  * 关卡信息结构体
@@ -48,13 +48,13 @@ struct FLevelInfo
  * - 在关卡切换时保持数据持久化
  */
 UCLASS()
-class CPP_3P_API Ucpp_3pGameInstance : public UGameInstance
+class CPP_1ST_API Ucpp_1stGameInstance : public UGameInstance
 {
 	GENERATED_BODY()
 
 public:
 	// 构造函数
-	Ucpp_3pGameInstance();
+	Ucpp_1stGameInstance();
 
 protected:
 	// 游戏实例初始化时调用

@@ -45,7 +45,7 @@ enum class ENPC1PExploreCameraAction : uint8
 };
 
 UCLASS()
-class CPP_3P_API ANPC_1p : public ANPC
+class CPP_1ST_API ANPC_1p : public ANPC
 {
 	GENERATED_BODY()
 

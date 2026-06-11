@@ -3,13 +3,13 @@
 using UnrealBuildTool;
 using System.Collections.Generic;
 
-public class cpp_3pTarget : TargetRules
+public class cpp_1stTarget : TargetRules
 {
-	public cpp_3pTarget(TargetInfo Target) : base(Target)
+	public cpp_1stTarget(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Game;
 		DefaultBuildSettings = BuildSettingsVersion.V5;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_4;
-		ExtraModuleNames.Add("cpp_3p");
+		ExtraModuleNames.Add("cpp_1st");
 	}
 }

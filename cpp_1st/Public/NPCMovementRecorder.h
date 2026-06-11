@@ -47,7 +47,7 @@ struct FNPCEventRecord
  * 负责记录NPC在自动导航过程中的每一帧状态，并导出为JSON格式
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class CPP_3P_API UNPCMovementRecorder : public UActorComponent
+class CPP_1ST_API UNPCMovementRecorder : public UActorComponent
 {
 	GENERATED_BODY()
 
