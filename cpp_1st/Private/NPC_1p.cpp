@@ -31,7 +31,7 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
     TurnYawToleranceDegrees = 1.0f;
     // Fake animation-facing velocity used only during idle camera / turn-in-place.
     // 24 = previous 120 / 5, so in-place pacing animation is much slower.
-    InPlacePaceAnimSpeed = 24.0f;
+    InPlacePaceAnimSpeed = 8.0f;
 
     if (CameraBoom)
     {
