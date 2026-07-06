@@ -33,6 +33,12 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
     // 24 = previous 120 / 5, so in-place pacing animation is much slower.
     InPlacePaceAnimSpeed = 8.0f;
 
+    TurnInPlacePitchSpeedDegrees = 10.0f;
+    PitchStateMaxNonCenterDuration = 2.0f;
+    PitchStateMinCenterDuration = 0.5f;
+    PitchStateMaxCenterDuration = 4.0f;
+    CurrentDesiredPitch = CameraBoomPitch;
+
     if (CameraBoom)
     {
         CameraBoom->TargetArmLength = CameraBoomLength;
@@ -53,6 +59,9 @@ void ANPC_1p::BeginPlay()
         CameraBoom->SetAbsolute(false, false, false);
         SetCameraBoomYawRelativePitchWorld(CameraBoom, FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f));
     }
+
+    CurrentDesiredPitch = CameraBoomPitch;
+    EnterPitchState(ENPC1PPitchState::Center);
 }
 
 void ANPC_1p::ExecuteNextStep(float DeltaTime)
@@ -73,6 +82,17 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
     if (MovementRecorder && MovementRecorder->bIsRecording)
     {
         MovementRecorder->RecordFrameFromNPC(this, CurrentPath, CurrentPathIndex, DeltaTime, bWasExecutingThisFrame);
+    }
+
+    if (GEngine)
+    {
+        const USpringArmComponent* CamBoom = GetCameraBoom();
+        const float CurrentPitch = CamBoom ? CamBoom->GetComponentRotation().Pitch : 0.0f;
+        GEngine->AddOnScreenDebugMessage(
+            INDEX_NONE,
+            0.0f,
+            FColor::Cyan,
+            FString::Printf(TEXT("NPC_1p[%s] CameraPitch = %.2f"), *GetActorLabel(), CurrentPitch));
     }
 }
 
@@ -751,41 +771,10 @@ bool ANPC_1p::IsMovePathCollisionFree(const FVector& StartActorLocation, const F
 
 ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
 {
-    const float CameraPitchCenter = CameraBoomPitch;
-    const float CurrentPitch = FMath::Clamp(CurrentCameraRotation.Pitch, -30.0f, 15.0f);
-    const float CurrentPitchOffset = CurrentPitch - CameraPitchCenter;
-
-    UpdatePitchOffsetHoldState(CurrentPitchOffset);
-
+    // Pitch is managed independently by UpdateIndependentPitch().
+    // This function only samples yaw (L/R). Pitch is always preserved.
     const int32 LRSignal = FMath::RandRange(0, 2);
-    int32 UDSignal = FMath::RandRange(0, 2);
-
-    if (FMath::Abs(CurrentPitchOffset) > CameraPitchHoldToleranceDegrees &&
-        SameNonZeroCameraPitchOffsetActionCount > MaxCameraPitchOffsetActionCount)
-    {
-        UDSignal = (CurrentPitch > CameraPitchCenter) ? 1 : 2;
-    }
-
-    float DesiredPitch = CurrentPitch;
-    if (UDSignal == 1)
-    {
-        DesiredPitch -= CameraPitchStepDegrees;
-    }
-    else if (UDSignal == 2)
-    {
-        DesiredPitch += CameraPitchStepDegrees;
-    }
-    DesiredPitch = FMath::Clamp(DesiredPitch, -30.0f, 15.0f);
-
-    int32 EffectiveUDSignal = 0;
-    if (DesiredPitch < CurrentPitch - KINDA_SMALL_NUMBER)
-    {
-        EffectiveUDSignal = 1;
-    }
-    else if (DesiredPitch > CurrentPitch + KINDA_SMALL_NUMBER)
-    {
-        EffectiveUDSignal = 2;
-    }
+    const int32 UDSignal = 0;
 
     float DesiredYaw = CurrentCameraRotation.Yaw;
     if (LRSignal == 1)
@@ -797,8 +786,8 @@ ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& Curr
         DesiredYaw += CameraYawStepDegrees;
     }
 
-    OutDesiredRotation = FRotator(DesiredPitch, DesiredYaw, CurrentCameraRotation.Roll);
-    return MakeCameraAction(LRSignal, EffectiveUDSignal);
+    OutDesiredRotation = FRotator(CurrentCameraRotation.Pitch, DesiredYaw, CurrentCameraRotation.Roll);
+    return MakeCameraAction(LRSignal, UDSignal);
 }
 
 ENPC1PExploreCameraAction ANPC_1p::MakeCameraAction(int32 LRSignal, int32 UDSignal) const
@@ -841,7 +830,7 @@ ENPC1PExploreCameraAction ANPC_1p::MakeCameraAction(int32 LRSignal, int32 UDSign
 void ANPC_1p::GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& OutLR, int32& OutUD) const
 {
     OutLR = 0;
-    OutUD = 0;
+    OutUD = 0; // pitch UD is now owned by UpdateIndependentPitch()
 
     switch (Action)
     {
@@ -850,28 +839,6 @@ void ANPC_1p::GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& Ou
         break;
     case ENPC1PExploreCameraAction::R:
         OutLR = 2;
-        break;
-    case ENPC1PExploreCameraAction::U:
-        OutUD = 1;
-        break;
-    case ENPC1PExploreCameraAction::D:
-        OutUD = 2;
-        break;
-    case ENPC1PExploreCameraAction::LU:
-        OutLR = 1;
-        OutUD = 1;
-        break;
-    case ENPC1PExploreCameraAction::LD:
-        OutLR = 1;
-        OutUD = 2;
-        break;
-    case ENPC1PExploreCameraAction::RU:
-        OutLR = 2;
-        OutUD = 1;
-        break;
-    case ENPC1PExploreCameraAction::RD:
-        OutLR = 2;
-        OutUD = 2;
         break;
     default:
         break;
@@ -926,7 +893,11 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
     SetActorRotation(ActorRotation);
 
     CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-    CameraBoomComp->SetWorldRotation(FRotator(MixedCameraRotation.Pitch, GetActorRotation().Yaw, 0.0f));
+
+    // Preserve the current camera boom pitch (managed independently by UpdateIndependentPitch).
+    // Only yaw is driven by the yaw/move action system.
+    const float CurrentBoomPitch = CameraBoomComp->GetComponentRotation().Pitch;
+    CameraBoomComp->SetWorldRotation(FRotator(CurrentBoomPitch, GetActorRotation().Yaw, 0.0f));
 }
 
 void ANPC_1p::BeginWalkCameraAction()
@@ -1030,5 +1001,97 @@ void ANPC_1p::SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD)
     CurrentRecorderAD = AD;
     CurrentRecorderLR = LR;
     CurrentRecorderUD = UD;
+}
+
+// ---------------------------------------------------------------------------
+// Independent Pitch State Machine
+// ---------------------------------------------------------------------------
+
+float ANPC_1p::GetPitchForState(ENPC1PPitchState State) const
+{
+    switch (State)
+    {
+    case ENPC1PPitchState::CenterMinusStep:
+        return CameraBoomPitch - CameraPitchStepDegrees;
+    case ENPC1PPitchState::CenterPlusStep:
+        return CameraBoomPitch + CameraPitchStepDegrees;
+    case ENPC1PPitchState::Center:
+    default:
+        return CameraBoomPitch;
+    }
+}
+
+void ANPC_1p::EnterPitchState(ENPC1PPitchState NewState)
+{
+    CurrentPitchState = NewState;
+    PitchStateElapsed = 0.0f;
+    CurrentDesiredPitch = GetPitchForState(NewState);
+
+    if (NewState == ENPC1PPitchState::Center)
+    {
+        CurrentPitchStateDuration = FMath::FRandRange(PitchStateMinCenterDuration, PitchStateMaxCenterDuration);
+    }
+    else
+    {
+        // Non-center: random duration, capped by the hard 2s limit
+        CurrentPitchStateDuration = FMath::FRandRange(0.1f, PitchStateMaxNonCenterDuration);
+    }
+}
+
+void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
+{
+    USpringArmComponent* CameraBoomComp = GetCameraBoom();
+    if (!CameraBoomComp)
+    {
+        return;
+    }
+
+    // 1. Smoothly interpolate pitch toward the desired value at the given angular speed
+    const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
+    const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
+    const float MaxStep = FMath::Max(TurnInPlacePitchSpeedDegrees, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+    const float NewPitch = FMath::Abs(PitchDelta) <= MaxStep
+        ? CurrentDesiredPitch
+        : CurrentPitch + FMath::Sign(PitchDelta) * MaxStep;
+
+    // 2. Apply: preserve yaw and roll, only set world pitch
+    const FRotator CurrentWorldRot = CameraBoomComp->GetComponentRotation();
+    CameraBoomComp->SetWorldRotation(FRotator(NewPitch, CurrentWorldRot.Yaw, CurrentWorldRot.Roll));
+
+    // 3. Advance state timer
+    PitchStateElapsed += DeltaTime;
+
+    // 4. Set recorder UD signal based on direction
+    if (FMath::Abs(CurrentDesiredPitch - NewPitch) <= KINDA_SMALL_NUMBER)
+    {
+        CurrentRecorderUD = 0; // at target
+    }
+    else if (CurrentDesiredPitch > NewPitch)
+    {
+        CurrentRecorderUD = 1; // looking up (pitch increasing toward target)
+    }
+    else
+    {
+        CurrentRecorderUD = 2; // looking down (pitch decreasing toward target)
+    }
+
+    // 5. Transition if target reached and duration elapsed
+    const bool bReachedTarget = FMath::Abs(CurrentDesiredPitch - NewPitch) <= CameraPitchHoldToleranceDegrees;
+    if (bReachedTarget && PitchStateElapsed >= CurrentPitchStateDuration)
+    {
+        if (CurrentPitchState == ENPC1PPitchState::Center)
+        {
+            // Center → non-center (randomly pick direction)
+            const ENPC1PPitchState NextState = FMath::RandBool()
+                ? ENPC1PPitchState::CenterPlusStep
+                : ENPC1PPitchState::CenterMinusStep;
+            EnterPitchState(NextState);
+        }
+        else
+        {
+            // Non-center → Center
+            EnterPitchState(ENPC1PPitchState::Center);
+        }
+    }
 }
 

@@ -9,6 +9,14 @@ class UCharacterMovementComponent;
 class UNPC1PCharacterMovementComponent;
 
 UENUM()
+enum class ENPC1PPitchState : uint8
+{
+	Center,
+	CenterMinusStep,
+	CenterPlusStep
+};
+
+UENUM()
 enum class ENPC1PExploreMoveAction : uint8
 {
 	Idle,
@@ -121,6 +129,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float InPlacePaceAnimSpeed;
 
+	/** Independent pitch state machine.
+	 *  Call from Blueprint every frame (e.g. on a Timeline or Event Tick).
+	 *  Completely decoupled from ExecuteNextStep — pitch changes at its own rhythm. */
+	UFUNCTION(BlueprintCallable, Category = "Camera|Pitch")
+	void UpdateIndependentPitch(float DeltaTime);
+
+	/** Angular velocity for pitch interpolation (degrees/sec). Mirrors TurnInPlaceYawSpeedDegrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float TurnInPlacePitchSpeedDegrees = 10.0f;
+
+	/** Hard limit: pitch will never stay in a non-Center state longer than this (seconds). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float PitchStateMaxNonCenterDuration = 2.0f;
+
+	/** Minimum random wait in Center state before pitching away (seconds). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
+	float PitchStateMinCenterDuration = 0.5f;
+
+	/** Maximum random wait in Center state before pitching away (seconds). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.5", UIMin = "0.5"))
+	float PitchStateMaxCenterDuration = 4.0f;
+
 
 private:
 	void StartExploreAction();
@@ -152,6 +182,10 @@ private:
 	UNPC1PCharacterMovementComponent* GetNPC1PMovementComponent() const;
 	void SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD);
 
+	/** --- Independent pitch state machine --- */
+	void EnterPitchState(ENPC1PPitchState NewState);
+	float GetPitchForState(ENPC1PPitchState State) const;
+
 private:
 	bool bIsExecutingExploreAction = false;
 	FVector CurrentExploreMoveTarget = FVector::ZeroVector;
@@ -179,4 +213,10 @@ private:
 
 	float LastNonZeroCameraPitchOffset = 0.0f;
 	int32 SameNonZeroCameraPitchOffsetActionCount = 0;
+
+	/** --- Independent pitch state machine members --- */
+	ENPC1PPitchState CurrentPitchState = ENPC1PPitchState::Center;
+	float PitchStateElapsed = 0.0f;
+	float CurrentPitchStateDuration = 0.0f;
+	float CurrentDesiredPitch = 0.0f;
 };
