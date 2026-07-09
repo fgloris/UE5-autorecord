@@ -797,6 +797,10 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
         return;
     }
 
+    // Save the current world pitch FIRST, before any transforms are modified,
+    // so that UpdateIndependentPitch is not overwritten.
+    const float SavedWorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
+
     CameraBoomComp->SetAbsolute(false, false, false);
 
     FRotator ActorRotation = GetActorRotation();
@@ -809,8 +813,7 @@ void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoom
 
     // Preserve the current camera boom pitch (managed independently by UpdateIndependentPitch).
     // Only yaw is driven by the yaw/move action system.
-    const float CurrentBoomPitch = CameraBoomComp->GetComponentRotation().Pitch;
-    CameraBoomComp->SetWorldRotation(FRotator(CurrentBoomPitch, GetActorRotation().Yaw, 0.0f));
+    CameraBoomComp->SetWorldRotation(FRotator(SavedWorldPitch, GetActorRotation().Yaw, 0.0f));
 }
 
 void ANPC_1p::BeginWalkCameraAction()
@@ -948,20 +951,21 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
     // 1. Smoothly interpolate pitch toward the desired value at the given angular speed
     const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
     const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
-    const float MaxStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
-    const float NewPitch = FMath::Abs(PitchDelta) <= MaxStep
-        ? CurrentDesiredPitch
-        : CurrentPitch + FMath::Sign(PitchDelta) * MaxStep;
+    const float PitchMoveStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+    const float NewPitch = CurrentPitch + FMath::Clamp(PitchDelta, -PitchMoveStep, PitchMoveStep);
+    const bool reached = FMath::Abs(CurrentPitch - CurrentDesiredPitch) <= CameraPitchHoldToleranceDegrees;
 
-    // 2. Apply: preserve yaw and roll, only set world pitch
-    const FRotator CurrentWorldRot = CameraBoomComp->GetComponentRotation();
-    CameraBoomComp->SetWorldRotation(FRotator(NewPitch, CurrentWorldRot.Yaw, CurrentWorldRot.Roll));
+    if (!reached){
+        // 2. Apply: preserve yaw and roll, only set world pitch
+        const FRotator CurrentWorldRot = CameraBoomComp->GetComponentRotation();
+        CameraBoomComp->SetWorldRotation(FRotator(NewPitch, CurrentWorldRot.Yaw, CurrentWorldRot.Roll));
+    }
 
     // 3. Advance state timer
     PitchStateElapsed += DeltaTime;
 
     // 4. Set recorder UD signal based on direction
-    if (FMath::Abs(CurrentDesiredPitch - NewPitch) <= KINDA_SMALL_NUMBER)
+    if (reached || FMath::Abs(CurrentDesiredPitch - NewPitch) <= KINDA_SMALL_NUMBER)
     {
         CurrentRecorderUD = 0; // at target
     }
@@ -975,8 +979,7 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
     }
 
     // 5. Transition if target reached and duration elapsed
-    const bool bReachedTarget = FMath::Abs(CurrentDesiredPitch - NewPitch) <= CameraPitchHoldToleranceDegrees;
-    if (bReachedTarget && PitchStateElapsed >= CurrentPitchStateDuration)
+    if (FMath::Abs(CameraBoomComp->GetComponentRotation().Pitch - CurrentDesiredPitch) < CameraPitchHoldToleranceDegrees && PitchStateElapsed >= CurrentPitchStateDuration)
     {
         if (CurrentPitchState == ENPC1PPitchState::Center)
         {
