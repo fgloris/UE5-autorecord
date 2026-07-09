@@ -12,8 +12,7 @@ UENUM()
 enum class ENPC1PPitchState : uint8
 {
 	Center,
-	CenterMinusStep,
-	CenterPlusStep
+	Away
 };
 
 UENUM()
@@ -97,12 +96,6 @@ protected:
 	float CameraYawStepDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
-	float CameraPitchStepDegrees;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
-	int32 MaxCameraPitchOffsetActionCount;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
 	float CameraPitchHoldToleranceDegrees;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore")
@@ -117,7 +110,7 @@ protected:
 
 	/** Constant yaw speed used while rotating in place toward the sampled movement direction. ExploreActionDuration only controls the later walking phase. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "1.0", UIMin = "1.0"))
-	float TurnInPlaceYawSpeedDegrees;
+	float YawAngularSpeed = 15.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|First Person", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float TurnYawToleranceDegrees;
@@ -135,9 +128,9 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Camera|Pitch")
 	void UpdateIndependentPitch(float DeltaTime);
 
-	/** Angular velocity for pitch interpolation (degrees/sec). Mirrors TurnInPlaceYawSpeedDegrees. */
+	/** Angular velocity for pitch interpolation (degrees/sec). Mirrors YawAngularSpeed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "1.0", UIMin = "1.0"))
-	float TurnInPlacePitchSpeedDegrees = 10.0f;
+	float PitchAngularSpeed = 15.0f;
 
 	/** Hard limit: pitch will never stay in a non-Center state longer than this (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
@@ -151,6 +144,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.5", UIMin = "0.5"))
 	float PitchStateMaxCenterDuration = 4.0f;
 
+	/** Minimum absolute pitch angle when in Away state (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "-90.0", UIMin = "-90.0"))
+	float PitchMinAngle = -30.0f;
+
+	/** Maximum absolute pitch angle when in Away state (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "-90.0", UIMin = "-90.0"))
+	float PitchMaxAngle = 30.0f;
 
 private:
 	void StartExploreAction();
@@ -160,19 +160,14 @@ private:
 	bool TryBuildActionCandidate(ENPC1PExploreMoveAction Action, FExploreMoveCandidate& OutCandidate) const;
 	bool IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const;
 	bool GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector& OutDirection) const;
-	void GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS, int32& OutAD) const;
 	ENPC1PExploreMoveAction GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const;
 	ENPC1PExploreCameraAction GetTurnCameraActionForMoveAction(ENPC1PExploreMoveAction Action) const;
 	float GetTurnYawOffsetDegreesForMoveAction(ENPC1PExploreMoveAction Action, ENPC1PExploreCameraAction TurnAction) const;
 	float GetVisitedScoreAtLocation(const FVector& WorldLocation) const;
 	int32 SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidate>& Candidates) const;
-	int32 SampleRandomCandidate(const TArray<FExploreMoveCandidate>& Candidates) const;
-	bool IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const;
-
 	ENPC1PExploreCameraAction ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation);
 	ENPC1PExploreCameraAction MakeCameraAction(int32 LRSignal, int32 UDSignal) const;
 	void GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& OutLR, int32& OutUD) const;
-	void UpdatePitchOffsetHoldState(float CurrentPitchOffset);
 	void SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation);
 	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
 	void BeginWalkCameraAction();
@@ -184,7 +179,6 @@ private:
 
 	/** --- Independent pitch state machine --- */
 	void EnterPitchState(ENPC1PPitchState NewState);
-	float GetPitchForState(ENPC1PPitchState State) const;
 
 private:
 	bool bIsExecutingExploreAction = false;
@@ -210,9 +204,6 @@ private:
 	int32 CurrentRecorderAD = 0;
 	int32 CurrentRecorderLR = 0;
 	int32 CurrentRecorderUD = 0;
-
-	float LastNonZeroCameraPitchOffset = 0.0f;
-	int32 SameNonZeroCameraPitchOffsetActionCount = 0;
 
 	/** --- Independent pitch state machine members --- */
 	ENPC1PPitchState CurrentPitchState = ENPC1PPitchState::Center;

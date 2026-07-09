@@ -18,8 +18,6 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
     ExploreActionDuration = 1.0f;
 
     CameraYawStepDegrees = 15.0f;
-    CameraPitchStepDegrees = 10.0f;
-    MaxCameraPitchOffsetActionCount = 1;
     CameraPitchHoldToleranceDegrees = 0.1f;
 
     bDebugDrawExploreCandidates = false;
@@ -27,16 +25,11 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
 
     CameraBoomLength = 0.0f;
     FirstPersonCameraRelativeLocation = FVector(0.0f, 0.0f, 60.0f);
-    TurnInPlaceYawSpeedDegrees = 15.0f;
     TurnYawToleranceDegrees = 1.0f;
     // Fake animation-facing velocity used only during idle camera / turn-in-place.
     // 24 = previous 120 / 5, so in-place pacing animation is much slower.
     InPlacePaceAnimSpeed = 8.0f;
 
-    TurnInPlacePitchSpeedDegrees = 10.0f;
-    PitchStateMaxNonCenterDuration = 2.0f;
-    PitchStateMinCenterDuration = 0.5f;
-    PitchStateMaxCenterDuration = 4.0f;
     CurrentDesiredPitch = CameraBoomPitch;
 
     if (CameraBoom)
@@ -310,7 +303,7 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         const float CurrentYaw = GetActorRotation().Yaw;
         const float TargetYaw = DesiredTurnActorRotation.Yaw;
         const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
-        const float MaxYawStep = FMath::Max(TurnInPlaceYawSpeedDegrees, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+        const float MaxYawStep = FMath::Max(YawAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
 
         int32 TurnLR = 0;
         int32 TurnUD = 0;
@@ -503,15 +496,6 @@ bool ANPC_1p::GetWorldDirectionForAction(ENPC1PExploreMoveAction Action, FVector
     return !OutDirection.IsNearlyZero();
 }
 
-void ANPC_1p::GetMoveActionSignals(ENPC1PExploreMoveAction Action, int32& OutWS, int32& OutAD) const
-{
-    // First-person data should not record strafing/backward intent.
-    // The 8-direction sample is only used to pick a target direction; the NPC turns first,
-    // then walks forward with W once aligned.
-    OutWS = (Action == ENPC1PExploreMoveAction::Idle) ? 0 : 1;
-    OutAD = 0;
-}
-
 ENPC1PExploreMoveAction ANPC_1p::GetOppositeMoveAction(ENPC1PExploreMoveAction Action) const
 {
     switch (Action)
@@ -582,16 +566,6 @@ float ANPC_1p::GetTurnYawOffsetDegreesForMoveAction(ENPC1PExploreMoveAction Acti
 }
 
 
-int32 ANPC_1p::SampleRandomCandidate(const TArray<FExploreMoveCandidate>& Candidates) const
-{
-    if (Candidates.Num() <= 0)
-    {
-        return INDEX_NONE;
-    }
-
-    return FMath::RandRange(0, Candidates.Num() - 1);
-}
-
 bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, FExploreMoveCandidate& OutCandidate) const
 {
     UWorld* World = GetWorld();
@@ -657,7 +631,7 @@ bool ANPC_1p::IsLandingValidForDirection(const FVector& DesiredWorldDirection, F
     {
         const float ColorScalar = FMath::Clamp(1.0f / (1.0f + OutCandidate.VisitedScore), 0.0f, 1.0f);
         const FColor Color = FColor::MakeRedToGreenColorFromScalar(ColorScalar);
-        const float DrawDuration = FMath::Max(ExploreActionDuration + 180.0f / FMath::Max(TurnInPlaceYawSpeedDegrees, 1.0f), KINDA_SMALL_NUMBER);
+        const float DrawDuration = FMath::Max(ExploreActionDuration + 180.0f / FMath::Max(YawAngularSpeed, 1.0f), KINDA_SMALL_NUMBER);
         DrawDebugSphere(World, LandingActorLocation, 12.0f, 8, Color, false, DrawDuration);
         DrawDebugLine(World, StartActorLocation, LandingActorLocation, Color, false, DrawDuration, 0, 1.5f);
     }
@@ -726,47 +700,6 @@ int32 ANPC_1p::SampleCandidateByVisitedSoftmax(const TArray<FExploreMoveCandidat
     }
 
     return Candidates.Num() - 1;
-}
-
-bool ANPC_1p::IsMovePathCollisionFree(const FVector& StartActorLocation, const FVector& EndActorLocation) const
-{
-    UWorld* World = GetWorld();
-    const UCapsuleComponent* Capsule = GetCapsuleComponent();
-    if (!World || !Capsule)
-    {
-        return false;
-    }
-
-    const float CapsuleRadius = Capsule->GetScaledCapsuleRadius() + 10.0f;
-    const float CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-    const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
-
-    FCollisionQueryParams Params(SCENE_QUERY_STAT(NPC1pCapsuleOverlap), false, this);
-    Params.AddIgnoredActor(this);
-
-    const FVector Delta = EndActorLocation - StartActorLocation;
-    const float TravelDist = Delta.Size2D();
-    const int32 NumSteps = FMath::Max(1, FMath::CeilToInt(TravelDist / FMath::Max(25.0f, GridSize * 0.25f)));
-
-    for (int32 StepIdx = 1; StepIdx <= NumSteps; ++StepIdx)
-    {
-        const float Alpha = static_cast<float>(StepIdx) / static_cast<float>(NumSteps);
-        const FVector SampleActorLocation = FMath::Lerp(StartActorLocation, EndActorLocation, Alpha);
-
-        const bool bHasOverlap = World->OverlapAnyTestByChannel(
-            SampleActorLocation,
-            FQuat::Identity,
-            ECollisionChannel::ECC_Pawn,
-            CapsuleShape,
-            Params);
-
-        if (bHasOverlap)
-        {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 ENPC1PExploreCameraAction ANPC_1p::ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation)
@@ -842,26 +775,6 @@ void ANPC_1p::GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& Ou
         break;
     default:
         break;
-    }
-}
-
-void ANPC_1p::UpdatePitchOffsetHoldState(float CurrentPitchOffset)
-{
-    if (FMath::Abs(CurrentPitchOffset) <= CameraPitchHoldToleranceDegrees)
-    {
-        LastNonZeroCameraPitchOffset = 0.0f;
-        SameNonZeroCameraPitchOffsetActionCount = 0;
-        return;
-    }
-
-    if (FMath::Abs(CurrentPitchOffset - LastNonZeroCameraPitchOffset) <= CameraPitchHoldToleranceDegrees)
-    {
-        ++SameNonZeroCameraPitchOffsetActionCount;
-    }
-    else
-    {
-        LastNonZeroCameraPitchOffset = CurrentPitchOffset;
-        SameNonZeroCameraPitchOffsetActionCount = 1;
     }
 }
 
@@ -1007,33 +920,19 @@ void ANPC_1p::SetRecorderSignals(int32 WS, int32 AD, int32 LR, int32 UD)
 // Independent Pitch State Machine
 // ---------------------------------------------------------------------------
 
-float ANPC_1p::GetPitchForState(ENPC1PPitchState State) const
-{
-    switch (State)
-    {
-    case ENPC1PPitchState::CenterMinusStep:
-        return CameraBoomPitch - CameraPitchStepDegrees;
-    case ENPC1PPitchState::CenterPlusStep:
-        return CameraBoomPitch + CameraPitchStepDegrees;
-    case ENPC1PPitchState::Center:
-    default:
-        return CameraBoomPitch;
-    }
-}
-
 void ANPC_1p::EnterPitchState(ENPC1PPitchState NewState)
 {
     CurrentPitchState = NewState;
     PitchStateElapsed = 0.0f;
-    CurrentDesiredPitch = GetPitchForState(NewState);
 
     if (NewState == ENPC1PPitchState::Center)
     {
+        CurrentDesiredPitch = CameraBoomPitch;
         CurrentPitchStateDuration = FMath::FRandRange(PitchStateMinCenterDuration, PitchStateMaxCenterDuration);
     }
     else
     {
-        // Non-center: random duration, capped by the hard 2s limit
+        CurrentDesiredPitch = FMath::FRandRange(PitchMinAngle, PitchMaxAngle);
         CurrentPitchStateDuration = FMath::FRandRange(0.1f, PitchStateMaxNonCenterDuration);
     }
 }
@@ -1049,7 +948,7 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
     // 1. Smoothly interpolate pitch toward the desired value at the given angular speed
     const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
     const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
-    const float MaxStep = FMath::Max(TurnInPlacePitchSpeedDegrees, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+    const float MaxStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
     const float NewPitch = FMath::Abs(PitchDelta) <= MaxStep
         ? CurrentDesiredPitch
         : CurrentPitch + FMath::Sign(PitchDelta) * MaxStep;
@@ -1081,15 +980,12 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
     {
         if (CurrentPitchState == ENPC1PPitchState::Center)
         {
-            // Center → non-center (randomly pick direction)
-            const ENPC1PPitchState NextState = FMath::RandBool()
-                ? ENPC1PPitchState::CenterPlusStep
-                : ENPC1PPitchState::CenterMinusStep;
-            EnterPitchState(NextState);
+            // Center → Away
+            EnterPitchState(ENPC1PPitchState::Away);
         }
         else
         {
-            // Non-center → Center
+            // Away → Center
             EnterPitchState(ENPC1PPitchState::Center);
         }
     }
