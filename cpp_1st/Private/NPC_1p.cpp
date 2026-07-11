@@ -809,13 +809,18 @@ void ANPC_1p::ApplyDesiredRotation(float DeltaTime)
     const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
     const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
     const float MaxPitchStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
-    const float NewPitch = CurrentPitch + FMath::Clamp(PitchDelta, -MaxPitchStep, MaxPitchStep);
+    float NewPitch = CurrentPitch + FMath::Clamp(PitchDelta, -MaxPitchStep, MaxPitchStep);
+    if (FMath::Abs(NewPitch - CurrentDesiredPitch) > FMath::Abs(PitchDelta))
+    {
+        NewPitch = CurrentDesiredPitch;
+    }
 
-    // --- Atomic apply: actor yaw + camera boom pitch+yaw in one consistent call ---
+    // --- Atomic apply: actor yaw + camera boom pitch-only relative rotation ---
+    // SetWorldRotation is NOT used: the mandatory quaternion decomposition relative
+    // to the parent (whose yaw was just set) introduced frame-to-frame pitch
+    // inconsistency. Writing RelativeRotation directly is unambiguous.
     SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
-    CameraBoomComp->SetAbsolute(false, false, false);
-    CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-    CameraBoomComp->SetWorldRotation(FRotator(NewPitch, NewYaw, 0.0f));
+    CameraBoomComp->SetRelativeRotation(FRotator(NewPitch, 0.0f, 0.0f));
 
     // --- Recorder UD signal based on pitch interpolation progress ---
     const bool bPitchReached = FMath::Abs(NewPitch - CurrentDesiredPitch) <= CameraPitchHoldToleranceDegrees;
