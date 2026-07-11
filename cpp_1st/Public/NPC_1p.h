@@ -147,11 +147,11 @@ protected:
 
 	/** Minimum random wait in Center state before pitching away (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
-	float PitchStateMinCenterDuration = 0.5f;
+	float PitchStateMinCenterDuration = 2.0f;
 
 	/** Maximum random wait in Center state before pitching away (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.5", UIMin = "0.5"))
-	float PitchStateMaxCenterDuration = 4.0f;
+	float PitchStateMaxCenterDuration = 8.0f;
 
 	/** Minimum absolute pitch angle when in Away state (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "-90.0", UIMin = "-90.0"))

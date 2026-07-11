@@ -25,12 +25,10 @@ ANPC::ANPC(const FObjectInitializer& ObjectInitializer)
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->SetAbsolute(false, true, false);
 	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
 	CameraBoom->TargetArmLength = CameraBoomLength;
 	CameraBoom->bUsePawnControlRotation = false;
 	CameraBoom->bDoCollisionTest = false;
-	CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, 0, 0));
 
 	MovementRecorder = CreateDefaultSubobject<UNPCMovementRecorder>(TEXT("MovementRecorder"));
 	MovementRecorder->SetComponentTickEnabled(false);
@@ -44,7 +42,6 @@ void ANPC::BeginPlay()
 	{
 		CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
 		CameraBoom->TargetArmLength = CameraBoomLength;
-		CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, 0.0f, 0.0f));
 	}
 
 	KernelInfluenceRadius = KernelSigma * FMath::Sqrt(-2.0f * FMath::Loge(0.1f));

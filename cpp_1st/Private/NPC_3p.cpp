@@ -22,11 +22,22 @@ ANPC_3p::ANPC_3p()
 
     bDebugDrawExploreCandidates = false;
     VisitedSoftmaxTemperature = 0.01f;
+
+    if (CameraBoom)
+    {
+        CameraBoom->SetAbsolute(false, true, false);
+        CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, 0.0f, 0.0f));
+    }
 }
 
 void ANPC_3p::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (CameraBoom)
+    {
+        CameraBoom->SetWorldRotation(FRotator(CameraBoomPitch, 0.0f, 0.0f));
+    }
 }
 
 void ANPC_3p::ExecuteNextStep(float DeltaTime)
