@@ -137,21 +137,25 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Camera|Pitch")
 	void UpdateIndependentPitch(float DeltaTime);
 
+	/** Apply the desired yaw and pitch atomically. Reads CurrentDesiredYaw and CurrentDesiredPitch, interpolates at angular speed, and writes both Actor rotation and CameraBoom world rotation in one call. Call AFTER ExecuteNextStep and UpdateIndependentPitch each frame. */
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void ApplyDesiredRotation(float DeltaTime);
+
 	/** Angular velocity for pitch interpolation (degrees/sec). Mirrors YawAngularSpeed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "1.0", UIMin = "1.0"))
 	float PitchAngularSpeed = 15.0f;
 
 	/** Hard limit: pitch will never stay in a non-Center state longer than this (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
-	float PitchStateMaxNonCenterDuration = 2.0f;
+	float PitchStateMaxNonCenterDuration = 1.0f;
 
 	/** Minimum random wait in Center state before pitching away (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.1", UIMin = "0.1"))
-	float PitchStateMinCenterDuration = 2.0f;
+	float PitchStateMinCenterDuration = 1.0f;
 
 	/** Maximum random wait in Center state before pitching away (seconds). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "0.5", UIMin = "0.5"))
-	float PitchStateMaxCenterDuration = 8.0f;
+	float PitchStateMaxCenterDuration = 2.0f;
 
 	/** Minimum absolute pitch angle when in Away state (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "-90.0", UIMin = "-90.0"))
@@ -185,8 +189,6 @@ private:
 	ENPC1PExploreCameraAction ChooseRandomCameraAction(const FRotator& CurrentCameraRotation, FRotator& OutDesiredRotation);
 	ENPC1PExploreCameraAction MakeCameraAction(int32 LRSignal, int32 UDSignal) const;
 	void GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& OutLR, int32& OutUD) const;
-	void SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation);
-	FRotator GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const;
 	void BeginWalkCameraAction();
 	void BeginCodeOnlyInPlacePace();
 	void UpdateCodeOnlyInPlacePace();
@@ -214,7 +216,6 @@ private:
 
 	bool bHasDesiredCameraWorldRotation = false;
 	ENPC1PExploreCameraAction CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
-	FRotator StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
 	FRotator DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
 
 	int32 CurrentRecorderWS = 0;
@@ -227,6 +228,7 @@ private:
 	float PitchStateElapsed = 0.0f;
 	float CurrentPitchStateDuration = 0.0f;
 	float CurrentDesiredPitch = 0.0f;
+	float CurrentDesiredYaw = 0.0f;
 
 	/** --- Social turn system --- */
 	void StartSocialTurn();

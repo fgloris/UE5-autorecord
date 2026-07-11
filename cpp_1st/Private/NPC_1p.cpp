@@ -53,9 +53,9 @@ void ANPC_1p::BeginPlay()
         CameraBoom->bDoCollisionTest = false;
         CameraBoom->SetRelativeLocation(FirstPersonCameraRelativeLocation);
         CameraBoom->SetAbsolute(false, false, false);
-        SetCameraBoomYawRelativePitchWorld(CameraBoom, FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f));
     }
 
+    CurrentDesiredYaw = GetActorRotation().Yaw;
     CurrentDesiredPitch = CameraBoomPitch;
     EnterPitchState(ENPC1PPitchState::Center);
 }
@@ -118,8 +118,8 @@ void ANPC_1p::ClearExploreMoveTarget()
     CurrentTurnCameraAction = ENPC1PExploreCameraAction::None;
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
-    StartCameraYawRelativePitchWorld = FRotator::ZeroRotator;
     DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
+    CurrentDesiredYaw = GetActorRotation().Yaw;
     SetRecorderSignals(0, 0, 0, 0);
 }
 
@@ -204,9 +204,9 @@ void ANPC_1p::StartExploreAction()
     if (Picked.Action == ENPC1PExploreMoveAction::Idle)
     {
         CurrentExplorePhase = ENPC1PExplorePhase::IdleCamera;
-        const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-        StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
-        CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
+        const FRotator CurrentCameraRot(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
+        CurrentExploreCameraAction = ChooseRandomCameraAction(CurrentCameraRot, DesiredCameraYawRelativePitchWorld);
+        CurrentDesiredYaw = DesiredCameraYawRelativePitchWorld.Yaw;
         GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
         CurrentRecorderWS = 0;
         CurrentRecorderAD = 0;
@@ -241,7 +241,6 @@ void ANPC_1p::StartExploreAction()
         if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
         {
             EndCodeOnlyInPlacePace(true);
-            SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
             CurrentExploreActionElapsed = 0.0f;
@@ -270,8 +269,6 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         return;
     }
 
-    USpringArmComponent* CameraBoomComp = GetCameraBoom();
-
     if (CurrentExplorePhase == ENPC1PExplorePhase::SocialTurnToPeer)
     {
         // Live-track the target position each frame (other NPCs are moving).
@@ -281,19 +278,16 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
             ToTarget = (SocialTurnTargetNPC->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
         }
 
-        const float CurrentYaw = GetActorRotation().Yaw;
+        // Centralize yaw control — ApplyDesiredRotation reads CurrentDesiredYaw and interpolates atomically.
         const float TargetYaw = !ToTarget.IsNearlyZero() ? ToTarget.Rotation().Yaw : DesiredTurnActorRotation.Yaw;
-        const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
-        const float MaxYawStep = FMath::Max(YawAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+        CurrentDesiredYaw = TargetYaw;
 
         UpdateCodeOnlyInPlacePace();
 
+        // Completion check uses the current actor yaw (set by ApplyDesiredRotation last frame).
+        const float YawDelta = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, CurrentDesiredYaw);
         if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
         {
-            if (!ToTarget.IsNearlyZero())
-            {
-                SetActorRotation(FRotator(0.0f, TargetYaw, 0.0f));
-            }
             AActor* TargetNPC = SocialTurnTargetNPC;
             ClearExploreMoveTarget();
             OnSocialTurnExecuted(TargetNPC);
@@ -309,27 +303,6 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
                     FString::Printf(TEXT("NPC_1p[%s] Social Turn DONE -> %s"), *GetActorLabel(), *TargetNPC->GetActorLabel()));
             }
         }
-        else
-        {
-            float NewYaw = CurrentYaw;
-            if (YawDelta > 0)
-            {
-                NewYaw = CurrentYaw + MaxYawStep;
-                if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDelta))
-                {
-                    NewYaw = TargetYaw;
-                }
-            }
-            else
-            {
-                NewYaw = CurrentYaw - MaxYawStep;
-                if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDelta))
-                {
-                    NewYaw = TargetYaw;
-                }
-            }
-            SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
-        }
         return;
     }
 
@@ -338,13 +311,8 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
         const float RemainingTime = FMath::Max(WalkDuration - CurrentExploreActionElapsed, 0.0f);
         const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
         CurrentExploreActionElapsed = FMath::Min(CurrentExploreActionElapsed + EffectiveDeltaTime, WalkDuration);
-        const float Alpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
 
-        if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-        {
-            const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), Alpha).Rotator();
-            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
-        }
+        // Camera yaw/pitch are interpolated atomically by ApplyDesiredRotation via CurrentDesiredYaw/CurrentDesiredPitch.
 
         if (CurrentExploreCameraAction != ENPC1PExploreCameraAction::None)
         {
@@ -357,12 +325,6 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
         if (CurrentExploreActionElapsed >= WalkDuration)
         {
-            if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-            {
-                SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
-            }
-
-
             const FVector ReachedLocation = GetActorLocation();
             ClearExploreMoveTarget();
             OnExploreMoveTargetReached(ReachedLocation);
@@ -373,52 +335,26 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     if (CurrentExplorePhase == ENPC1PExplorePhase::TurnToMoveDirection)
     {
         UpdateCodeOnlyInPlacePace();
+
+        // Centralize yaw control — ApplyDesiredRotation reads CurrentDesiredYaw and interpolates atomically.
+        CurrentDesiredYaw = DesiredTurnActorRotation.Yaw;
+
         const float CurrentYaw = GetActorRotation().Yaw;
-        const float TargetYaw = DesiredTurnActorRotation.Yaw;
-        const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
-        const float MaxYawStep = FMath::Max(YawAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+        const float YawDeltaBefore = FMath::FindDeltaAngleDegrees(CurrentYaw, CurrentDesiredYaw);
 
         int32 TurnLR = 0;
         int32 TurnUD = 0;
         GetCameraActionSignals(CurrentTurnCameraAction, TurnLR, TurnUD);
         SetRecorderSignals(0, 0, FMath::Abs(YawDeltaBefore) > TurnYawToleranceDegrees ? TurnLR : 0, 0);
 
-        float NewYaw = CurrentYaw;
-        if (CurrentTurnCameraAction == ENPC1PExploreCameraAction::L)
-        {
-            NewYaw = CurrentYaw - MaxYawStep;
-            if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDeltaBefore))
-            {
-                NewYaw = TargetYaw;
-            }
-        }
-        else if (CurrentTurnCameraAction == ENPC1PExploreCameraAction::R)
-        {
-            NewYaw = CurrentYaw + MaxYawStep;
-            if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDeltaBefore))
-            {
-                NewYaw = TargetYaw;
-            }
-        }
-        else
-        {
-            NewYaw = TargetYaw;
-        }
-
-        SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
-
-        const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, TargetYaw);
-
-        // Turning has no fixed duration now, so drive the stepping pose by real time.
-        // The custom movement component exposes fake Velocity/Acceleration to AnimBP
-        // while PhysWalking is intercepted so the Actor never translates.
         CurrentExploreActionElapsed += DeltaTime;
         UpdateCodeOnlyInPlacePace();
 
+        // Completion check — actor yaw moves toward CurrentDesiredYaw via ApplyDesiredRotation.
+        const float YawDeltaRemaining = FMath::FindDeltaAngleDegrees(GetActorRotation().Yaw, CurrentDesiredYaw);
         if (FMath::Abs(YawDeltaBefore) <= TurnYawToleranceDegrees || FMath::Abs(YawDeltaRemaining) <= TurnYawToleranceDegrees)
         {
             EndCodeOnlyInPlacePace(true);
-            SetActorRotation(DesiredTurnActorRotation);
             BeginWalkCameraAction();
             CurrentExplorePhase = ENPC1PExplorePhase::WalkForward;
             CurrentExploreActionElapsed = 0.0f;
@@ -437,14 +373,9 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     const float RemainingTime = FMath::Max(WalkDuration - CurrentExploreActionElapsed, 0.0f);
     const float EffectiveDeltaTime = FMath::Clamp(DeltaTime, 0.0f, RemainingTime);
     CurrentExploreActionElapsed = FMath::Min(CurrentExploreActionElapsed + EffectiveDeltaTime, WalkDuration);
-    const float WalkAlpha = FMath::Clamp(CurrentExploreActionElapsed / WalkDuration, 0.0f, 1.0f);
     const float InputScaleByFrame = (DeltaTime > KINDA_SMALL_NUMBER) ? (EffectiveDeltaTime / DeltaTime) : 0.0f;
 
-    if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-    {
-        const FRotator MixedCameraRotation = FQuat::Slerp(StartCameraYawRelativePitchWorld.Quaternion(), DesiredCameraYawRelativePitchWorld.Quaternion(), WalkAlpha).Rotator();
-        SetCameraBoomYawRelativePitchWorld(CameraBoomComp, MixedCameraRotation);
-    }
+    // Camera yaw/pitch are interpolated atomically by ApplyDesiredRotation via CurrentDesiredYaw/CurrentDesiredPitch.
 
     EndCodeOnlyInPlacePace(true);
     MoveComp->SetMovementMode(MOVE_Walking);
@@ -452,11 +383,6 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
 
     if (CurrentExploreActionElapsed >= WalkDuration)
     {
-        if (CameraBoomComp && bHasDesiredCameraWorldRotation)
-        {
-            SetCameraBoomYawRelativePitchWorld(CameraBoomComp, DesiredCameraYawRelativePitchWorld);
-        }
-
         const FVector ReachedLocation = GetActorLocation();
         ClearExploreMoveTarget();
         OnExploreMoveTargetReached(ReachedLocation);
@@ -851,42 +777,56 @@ void ANPC_1p::GetCameraActionSignals(ENPC1PExploreCameraAction Action, int32& Ou
     }
 }
 
-FRotator ANPC_1p::GetCameraBoomYawRelativePitchWorld(const USpringArmComponent* CameraBoomComp) const
-{
-    if (!CameraBoomComp)
-    {
-        return FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
-    }
+// ---------------------------------------------------------------------------
+// Unified rotation application: atomically applies both yaw (actor) and pitch (camera boom).
+// Call AFTER ExecuteNextStep and UpdateIndependentPitch each frame from Blueprint.
+// ---------------------------------------------------------------------------
 
-    const float WorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
-    const float ActorWorldYaw = GetActorRotation().Yaw;
-    return FRotator(WorldPitch, ActorWorldYaw, 0.0f);
-}
-
-void ANPC_1p::SetCameraBoomYawRelativePitchWorld(USpringArmComponent* CameraBoomComp, const FRotator& MixedCameraRotation)
+void ANPC_1p::ApplyDesiredRotation(float DeltaTime)
 {
+    USpringArmComponent* CameraBoomComp = GetCameraBoom();
     if (!CameraBoomComp)
     {
         return;
     }
 
-    // Save the current world pitch FIRST, before any transforms are modified,
-    // so that UpdateIndependentPitch is not overwritten.
-    const float SavedWorldPitch = CameraBoomComp->GetComponentRotation().Pitch;
+    // --- Yaw: interpolate actor toward CurrentDesiredYaw at YawAngularSpeed ---
+    const float CurrentYaw = GetActorRotation().Yaw;
+    const float RawYawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, CurrentDesiredYaw);
+    float NewYaw = CurrentYaw;
+    if (FMath::Abs(RawYawDelta) > TurnYawToleranceDegrees)
+    {
+        const float MaxYawStep = FMath::Max(YawAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+        NewYaw = CurrentYaw + FMath::Clamp(RawYawDelta, -MaxYawStep, MaxYawStep);
+        // Prevent overshoot
+        if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, CurrentDesiredYaw)) > FMath::Abs(RawYawDelta))
+        {
+            NewYaw = CurrentDesiredYaw;
+        }
+    }
 
+    // --- Pitch: interpolate camera boom toward CurrentDesiredPitch at PitchAngularSpeed ---
+    const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
+    const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
+    const float MaxPitchStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+    const float NewPitch = CurrentPitch + FMath::Clamp(PitchDelta, -MaxPitchStep, MaxPitchStep);
+
+    // --- Atomic apply: actor yaw + camera boom pitch+yaw in one consistent call ---
+    SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
     CameraBoomComp->SetAbsolute(false, false, false);
-
-    FRotator ActorRotation = GetActorRotation();
-    ActorRotation.Yaw = MixedCameraRotation.Yaw;
-    ActorRotation.Pitch = 0.0f;
-    ActorRotation.Roll = 0.0f;
-    SetActorRotation(ActorRotation);
-
     CameraBoomComp->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+    CameraBoomComp->SetWorldRotation(FRotator(NewPitch, NewYaw, 0.0f));
 
-    // Preserve the current camera boom pitch (managed independently by UpdateIndependentPitch).
-    // Only yaw is driven by the yaw/move action system.
-    CameraBoomComp->SetWorldRotation(FRotator(SavedWorldPitch, GetActorRotation().Yaw, 0.0f));
+    // --- Recorder UD signal based on pitch interpolation progress ---
+    const bool bPitchReached = FMath::Abs(NewPitch - CurrentDesiredPitch) <= CameraPitchHoldToleranceDegrees;
+    if (bPitchReached)
+    {
+        CurrentRecorderUD = 0;
+    }
+    else
+    {
+        CurrentRecorderUD = (CurrentDesiredPitch > NewPitch) ? 1 : 2;
+    }
 }
 
 void ANPC_1p::BeginWalkCameraAction()
@@ -897,9 +837,9 @@ void ANPC_1p::BeginWalkCameraAction()
     }
 
     bWalkCameraActionStarted = true;
-    const USpringArmComponent* CameraBoomComp = GetCameraBoom();
-    StartCameraYawRelativePitchWorld = CameraBoomComp ? GetCameraBoomYawRelativePitchWorld(CameraBoomComp) : FRotator(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
-    CurrentExploreCameraAction = ChooseRandomCameraAction(StartCameraYawRelativePitchWorld, DesiredCameraYawRelativePitchWorld);
+    const FRotator CurrentCameraRot(CameraBoomPitch, GetActorRotation().Yaw, 0.0f);
+    CurrentExploreCameraAction = ChooseRandomCameraAction(CurrentCameraRot, DesiredCameraYawRelativePitchWorld);
+    CurrentDesiredYaw = DesiredCameraYawRelativePitchWorld.Yaw;
     GetCameraActionSignals(CurrentExploreCameraAction, CurrentRecorderLR, CurrentRecorderUD);
     CurrentRecorderWS = 1;
     CurrentRecorderAD = 0;
@@ -1021,47 +961,21 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
         return;
     }
 
-    // 1. Smoothly interpolate pitch toward the desired value at the given angular speed
-    const float CurrentPitch = CameraBoomComp->GetComponentRotation().Pitch;
-    const float PitchDelta = CurrentDesiredPitch - CurrentPitch;
-    const float PitchMoveStep = FMath::Max(PitchAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
-    const float NewPitch = CurrentPitch + FMath::Clamp(PitchDelta, -PitchMoveStep, PitchMoveStep);
-    const bool reached = FMath::Abs(CurrentPitch - CurrentDesiredPitch) <= CameraPitchHoldToleranceDegrees;
-
-    if (!reached){
-        // 2. Apply: preserve yaw and roll, only set world pitch
-        const FRotator CurrentWorldRot = CameraBoomComp->GetComponentRotation();
-        CameraBoomComp->SetWorldRotation(FRotator(NewPitch, CurrentWorldRot.Yaw, CurrentWorldRot.Roll));
-    }
-
-    // 3. Advance state timer
+    // State machine only — rotation interpolation and application are handled by ApplyDesiredRotation.
     PitchStateElapsed += DeltaTime;
 
-    // 4. Set recorder UD signal based on direction
-    if (reached || FMath::Abs(CurrentDesiredPitch - NewPitch) <= KINDA_SMALL_NUMBER)
-    {
-        CurrentRecorderUD = 0; // at target
-    }
-    else if (CurrentDesiredPitch > NewPitch)
-    {
-        CurrentRecorderUD = 1; // looking up (pitch increasing toward target)
-    }
-    else
-    {
-        CurrentRecorderUD = 2; // looking down (pitch decreasing toward target)
-    }
+    // Check if the pitch target has been reached (component rotation set by ApplyDesiredRotation last frame).
+    const bool bPitchReached = FMath::Abs(CameraBoomComp->GetComponentRotation().Pitch - CurrentDesiredPitch) <= CameraPitchHoldToleranceDegrees;
 
-    // 5. Transition if target reached and duration elapsed
-    if (FMath::Abs(CameraBoomComp->GetComponentRotation().Pitch - CurrentDesiredPitch) < CameraPitchHoldToleranceDegrees && PitchStateElapsed >= CurrentPitchStateDuration)
+    // Transition if target reached and duration elapsed.
+    if (bPitchReached && PitchStateElapsed >= CurrentPitchStateDuration)
     {
         if (CurrentPitchState == ENPC1PPitchState::Center)
         {
-            // Center → Away
             EnterPitchState(ENPC1PPitchState::Away);
         }
         else
         {
-            // Away → Center
             EnterPitchState(ENPC1PPitchState::Center);
         }
     }
@@ -1109,24 +1023,14 @@ void ANPC_1p::StartSocialTurn()
     StartTurnActorRotation = GetActorRotation();
     DesiredTurnActorRotation = StartTurnActorRotation;
     DesiredTurnActorRotation.Yaw = ToNearest.Rotation().Yaw;
+    CurrentDesiredYaw = DesiredTurnActorRotation.Yaw;
 
     bHasDesiredCameraWorldRotation = false;
     CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
     SetRecorderSignals(0, 0, 0, 0);
 
-    // If already facing within tolerance, complete immediately.
-    const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
-    if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
-    {
-        SetActorRotation(DesiredTurnActorRotation);
-        AActor* TargetNPC = SocialTurnTargetNPC;
-        ClearExploreMoveTarget();
-        OnSocialTurnExecuted(TargetNPC);
-    }
-    else
-    {
-        BeginCodeOnlyInPlacePace();
-    }
+    // SocialTurnToPeer handles the completion check; ApplyDesiredRotation handles the interpolation.
+    BeginCodeOnlyInPlacePace();
 }
 
 AActor* ANPC_1p::FindNearestSameTypeNPC() const
