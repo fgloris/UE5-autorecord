@@ -35,7 +35,8 @@ enum class ENPC1PExplorePhase : uint8
 	None,
 	IdleCamera,
 	TurnToMoveDirection,
-	WalkForward
+	WalkForward,
+	SocialTurnToPeer
 };
 
 UENUM()
@@ -76,6 +77,14 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Explore")
 	void OnExploreMoveTargetReached(const FVector& ReachedLocation);
+
+	/** Called after smoothly turning to face another same-type NPC. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Explore|Social")
+	void OnSocialTurnExecuted(AActor* TargetNPC);
+
+	/** Set the list of same-type NPCs to consider for social turns. Call with GetAllActorsOfClass output. */
+	UFUNCTION(BlueprintCallable, Category = "Explore|Social")
+	void SetSameTypeNPCList(const TArray<AActor*>& InList) { SameTypeNPCList = InList; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -152,6 +161,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "-90.0", UIMin = "-90.0"))
 	float PitchMaxAngle = 30.0f;
 
+	/** Minimum random interval between social turns (seconds). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|Social", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float SocialTurnMinInterval;
+
+	/** Maximum random interval between social turns (seconds). Average(min,max) should give >= 3 turns/minute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Explore|Social", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float SocialTurnMaxInterval;
+
 private:
 	void StartExploreAction();
 	void ExecuteExploreAction(float DeltaTime);
@@ -210,4 +227,16 @@ private:
 	float PitchStateElapsed = 0.0f;
 	float CurrentPitchStateDuration = 0.0f;
 	float CurrentDesiredPitch = 0.0f;
+
+	/** --- Social turn system --- */
+	void StartSocialTurn();
+	AActor* FindNearestSameTypeNPC() const;
+
+	UPROPERTY()
+	TArray<AActor*> SameTypeNPCList;
+
+	UPROPERTY()
+	AActor* SocialTurnTargetNPC = nullptr;
+
+	float SocialTurnCooldownRemaining = 0.0f;
 };

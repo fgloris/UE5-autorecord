@@ -38,6 +38,9 @@ ANPC_1p::ANPC_1p(const FObjectInitializer& ObjectInitializer)
         CameraBoom->bDoCollisionTest = false;
         CameraBoom->SetRelativeLocation(FirstPersonCameraRelativeLocation);
     }
+
+    SocialTurnMinInterval = 10.0f;
+    SocialTurnMaxInterval = 25.0f;
 }
 
 void ANPC_1p::BeginPlay()
@@ -64,9 +67,20 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
         return;
     }
 
+    // Count down social turn cooldown in real time.
+    SocialTurnCooldownRemaining -= DeltaTime;
+
     if (!bIsExecutingExploreAction)
     {
-        StartExploreAction();
+        if (SocialTurnCooldownRemaining <= 0.0f)
+        {
+            StartSocialTurn();
+        }
+
+        if (!bIsExecutingExploreAction)
+        {
+            StartExploreAction();
+        }
     }
 
     const bool bWasExecutingThisFrame = bIsExecutingExploreAction;
@@ -214,8 +228,6 @@ void ANPC_1p::StartExploreAction()
         CurrentTurnCameraAction = GetTurnCameraActionForMoveAction(Picked.Action);
         DesiredTurnActorRotation = StartTurnActorRotation;
         DesiredTurnActorRotation.Yaw = StartTurnActorRotation.Yaw + GetTurnYawOffsetDegreesForMoveAction(Picked.Action, CurrentTurnCameraAction);
-        DesiredTurnActorRotation.Pitch = 0.0f;
-        DesiredTurnActorRotation.Roll = 0.0f;
         bHasDesiredCameraWorldRotation = false;
         CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
         DesiredCameraYawRelativePitchWorld = FRotator::ZeroRotator;
@@ -259,6 +271,67 @@ void ANPC_1p::ExecuteExploreAction(float DeltaTime)
     }
 
     USpringArmComponent* CameraBoomComp = GetCameraBoom();
+
+    if (CurrentExplorePhase == ENPC1PExplorePhase::SocialTurnToPeer)
+    {
+        // Live-track the target position each frame (other NPCs are moving).
+        FVector ToTarget = FVector::ZeroVector;
+        if (SocialTurnTargetNPC && IsValid(SocialTurnTargetNPC))
+        {
+            ToTarget = (SocialTurnTargetNPC->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+        }
+
+        const float CurrentYaw = GetActorRotation().Yaw;
+        const float TargetYaw = !ToTarget.IsNearlyZero() ? ToTarget.Rotation().Yaw : DesiredTurnActorRotation.Yaw;
+        const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
+        const float MaxYawStep = FMath::Max(YawAngularSpeed, 1.0f) * FMath::Max(DeltaTime, 0.0f);
+
+        UpdateCodeOnlyInPlacePace();
+
+        if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
+        {
+            if (!ToTarget.IsNearlyZero())
+            {
+                SetActorRotation(FRotator(0.0f, TargetYaw, 0.0f));
+            }
+            AActor* TargetNPC = SocialTurnTargetNPC;
+            ClearExploreMoveTarget();
+            OnSocialTurnExecuted(TargetNPC);
+            // Start next explore action immediately instead of waiting for next frame.
+            StartExploreAction();
+
+            if (GEngine && TargetNPC)
+            {
+                GEngine->AddOnScreenDebugMessage(
+                    INDEX_NONE,
+                    3.0f,
+                    FColor::Green,
+                    FString::Printf(TEXT("NPC_1p[%s] Social Turn DONE -> %s"), *GetActorLabel(), *TargetNPC->GetActorLabel()));
+            }
+        }
+        else
+        {
+            float NewYaw = CurrentYaw;
+            if (YawDelta > 0)
+            {
+                NewYaw = CurrentYaw + MaxYawStep;
+                if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDelta))
+                {
+                    NewYaw = TargetYaw;
+                }
+            }
+            else
+            {
+                NewYaw = CurrentYaw - MaxYawStep;
+                if (FMath::Abs(FMath::FindDeltaAngleDegrees(NewYaw, TargetYaw)) > FMath::Abs(YawDelta))
+                {
+                    NewYaw = TargetYaw;
+                }
+            }
+            SetActorRotation(FRotator(0.0f, NewYaw, 0.0f));
+        }
+        return;
+    }
 
     if (bIsIdleAction)
     {
@@ -992,5 +1065,90 @@ void ANPC_1p::UpdateIndependentPitch(float DeltaTime)
             EnterPitchState(ENPC1PPitchState::Center);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Social Turn System (framerate-based smooth rotation via state machine)
+// ---------------------------------------------------------------------------
+
+void ANPC_1p::StartSocialTurn()
+{
+    // Reset cooldown first — even on early-out, don't spin-loop every frame.
+    SocialTurnCooldownRemaining = FMath::FRandRange(SocialTurnMinInterval, SocialTurnMaxInterval);
+
+    AActor* Nearest = FindNearestSameTypeNPC();
+    if (!Nearest)
+    {
+        return;
+    }
+
+    UpdateVisitedStatsAtCurrentPosition();
+
+    const FVector ToNearest = (Nearest->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+    if (ToNearest.IsNearlyZero())
+    {
+        return;
+    }
+
+    SocialTurnTargetNPC = Nearest;
+
+    if (GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(
+            INDEX_NONE,
+            3.0f,
+            FColor::Yellow,
+            FString::Printf(TEXT("NPC_1p[%s] Social Turn -> facing %s started"), *GetActorLabel(), *Nearest->GetActorLabel()));
+    }
+
+    bIsExecutingExploreAction = true;
+    CurrentExploreMoveAction = ENPC1PExploreMoveAction::Idle;
+    CurrentExploreMoveTarget = Nearest->GetActorLocation();
+    CurrentExplorePhase = ENPC1PExplorePhase::SocialTurnToPeer;
+
+    StartTurnActorRotation = GetActorRotation();
+    DesiredTurnActorRotation = StartTurnActorRotation;
+    DesiredTurnActorRotation.Yaw = ToNearest.Rotation().Yaw;
+
+    bHasDesiredCameraWorldRotation = false;
+    CurrentExploreCameraAction = ENPC1PExploreCameraAction::None;
+    SetRecorderSignals(0, 0, 0, 0);
+
+    // If already facing within tolerance, complete immediately.
+    const float YawDelta = FMath::FindDeltaAngleDegrees(StartTurnActorRotation.Yaw, DesiredTurnActorRotation.Yaw);
+    if (FMath::Abs(YawDelta) <= TurnYawToleranceDegrees)
+    {
+        SetActorRotation(DesiredTurnActorRotation);
+        AActor* TargetNPC = SocialTurnTargetNPC;
+        ClearExploreMoveTarget();
+        OnSocialTurnExecuted(TargetNPC);
+    }
+    else
+    {
+        BeginCodeOnlyInPlacePace();
+    }
+}
+
+AActor* ANPC_1p::FindNearestSameTypeNPC() const
+{
+    AActor* Nearest = nullptr;
+    float NearestDistSq = FLT_MAX;
+
+    for (AActor* Candidate : SameTypeNPCList)
+    {
+        if (!IsValid(Candidate) || Candidate == this)
+        {
+            continue;
+        }
+
+        const float DistSq = FVector::DistSquared2D(GetActorLocation(), Candidate->GetActorLocation());
+        if (DistSq < NearestDistSq)
+        {
+            NearestDistSq = DistSq;
+            Nearest = Candidate;
+        }
+    }
+
+    return Nearest;
 }
 
