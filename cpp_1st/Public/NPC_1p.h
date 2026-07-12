@@ -137,9 +137,15 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Camera|Pitch")
 	void UpdateIndependentPitch(float DeltaTime);
 
-	/** Apply the desired yaw and pitch atomically. Reads CurrentDesiredYaw and CurrentDesiredPitch, interpolates at angular speed, and writes both Actor rotation and CameraBoom world rotation in one call. Call AFTER ExecuteNextStep and UpdateIndependentPitch each frame. */
+	/** Apply the desired yaw and pitch atomically. Reads CurrentDesiredYaw and CurrentDesiredPitch, interpolates at angular speed, and writes both Actor rotation and CameraBoom world rotation in one call. Call BEFORE RecordCurrentFrame each frame. */
 	UFUNCTION(BlueprintCallable, Category = "Camera")
 	void ApplyDesiredRotation(float DeltaTime);
+
+	/** Record the current frame to the MovementRecorder.
+	 *  Must be called AFTER ApplyDesiredRotation so that the pitch UD signal is correct.
+	 *  Call order: UpdateIndependentPitch → ExecuteNextStep → ApplyDesiredRotation → RecordCurrentFrame. */
+	UFUNCTION(BlueprintCallable, Category = "Explore")
+	void RecordCurrentFrame(float DeltaTime);
 
 	/** Angular velocity for pitch interpolation (degrees/sec). Mirrors YawAngularSpeed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Pitch", meta = (ClampMin = "1.0", UIMin = "1.0"))
@@ -241,4 +247,7 @@ private:
 	AActor* SocialTurnTargetNPC = nullptr;
 
 	float SocialTurnCooldownRemaining = 0.0f;
+
+	/** Captured by ExecuteNextStep, consumed by RecordCurrentFrame (called after ApplyDesiredRotation). */
+	bool bWasExecutingThisFrameForRecording = false;
 };

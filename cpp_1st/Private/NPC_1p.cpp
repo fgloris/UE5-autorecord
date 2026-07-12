@@ -83,24 +83,8 @@ void ANPC_1p::ExecuteNextStep(float DeltaTime)
         }
     }
 
-    const bool bWasExecutingThisFrame = bIsExecutingExploreAction;
+    bWasExecutingThisFrameForRecording = bIsExecutingExploreAction;
     ExecuteExploreAction(DeltaTime);
-
-    if (MovementRecorder && MovementRecorder->bIsRecording)
-    {
-        MovementRecorder->RecordFrameFromNPC(this, CurrentPath, CurrentPathIndex, DeltaTime, bWasExecutingThisFrame);
-    }
-
-    if (GEngine)
-    {
-        const USpringArmComponent* CamBoom = GetCameraBoom();
-        const float CurrentPitch = CamBoom ? CamBoom->GetComponentRotation().Pitch : 0.0f;
-        GEngine->AddOnScreenDebugMessage(
-            INDEX_NONE,
-            0.0f,
-            FColor::Cyan,
-            FString::Printf(TEXT("NPC_1p[%s] CameraPitch = %.2f"), *GetActorLabel(), CurrentPitch));
-    }
 }
 
 void ANPC_1p::ClearExploreMoveTarget()
@@ -831,6 +815,25 @@ void ANPC_1p::ApplyDesiredRotation(float DeltaTime)
     else
     {
         CurrentRecorderUD = (CurrentDesiredPitch > NewPitch) ? 1 : 2;
+    }
+}
+
+void ANPC_1p::RecordCurrentFrame(float DeltaTime)
+{
+    if (MovementRecorder && MovementRecorder->bIsRecording)
+    {
+        MovementRecorder->RecordFrameFromNPC(this, CurrentPath, CurrentPathIndex, DeltaTime, bWasExecutingThisFrameForRecording);
+    }
+
+    if (GEngine)
+    {
+        const USpringArmComponent* CamBoom = GetCameraBoom();
+        const float CurrentPitch = CamBoom ? CamBoom->GetComponentRotation().Pitch : 0.0f;
+        GEngine->AddOnScreenDebugMessage(
+            INDEX_NONE,
+            0.0f,
+            FColor::Cyan,
+            FString::Printf(TEXT("NPC_1p[%s] CameraPitch = %.2f"), *GetActorLabel(), CurrentPitch));
     }
 }
 
